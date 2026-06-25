@@ -1,0 +1,26 @@
+# dependencies
+node_modules/
+
+# build output
+dist/
+
+# env / secrets — NEVER commit these
+.env
+.env.local
+*.local
+
+# logs
+*.log
+npm-debug.log*
+
+# OS / editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# test coverage
+coverage/
+
+# ECC (Everything Claude Code) agent harness — local dev aid, not a build artifact
+.claude/

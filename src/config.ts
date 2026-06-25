@@ -1,0 +1,43 @@
+import "dotenv/config";
+import { z } from "zod";
+
+/**
+ * Central, validated configuration. We fail fast at startup with a clear
+ * message if a required secret is missing — never trust the environment to be
+ * complete (see ECC security rules: validate required secrets at startup).
+ */
+const EnvSchema = z.object({
+  SLACK_BOT_TOKEN: z.string().min(1, "SLACK_BOT_TOKEN is required (xoxb-...)"),
+  SLACK_APP_TOKEN: z.string().min(1, "SLACK_APP_TOKEN is required (xapp-...) for Socket Mode"),
+
+  ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
+  TRIAGE_MODEL: z.string().default("claude-opus-4-8"),
+
+  GITHUB_TOKEN: z.string().min(1, "GITHUB_TOKEN is required to read repo context"),
+  GITHUB_DEFAULT_REPO: z
+    .string()
+    .regex(/^[^/\s]+\/[^/\s]+$/, "GITHUB_DEFAULT_REPO must look like owner/repo")
+    .optional(),
+
+  GITHUB_MCP_MODE: z.enum(["remote", "local"]).default("remote"),
+  GITHUB_MCP_URL: z.string().url().default("https://api.githubcopilot.com/mcp/"),
+
+  TRIAGE_MAX_STEPS: z.coerce.number().int().positive().max(20).default(6),
+  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+});
+
+export type AppConfig = z.infer<typeof EnvSchema>;
+
+let cached: AppConfig | null = null;
+
+/** Parse and cache the environment. Throws a readable error if invalid. */
+export function loadConfig(): AppConfig {
+  if (cached) return cached;
+  const parsed = EnvSchema.safeParse(process.env);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => `  - ${i.path.join(".")}: ${i.message}`).join("\n");
+    throw new Error(`Invalid environment configuration:\n${issues}\n\nCopy .env.example to .env and fill in the values.`);
+  }
+  cached = parsed.data;
+  return cached;
+}
