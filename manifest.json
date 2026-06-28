@@ -1,7 +1,7 @@
 {
   "display_information": {
     "name": "Culprit",
-    "description": "Report the symptom. Culprit names the cause — root-cause hypothesis, suspected owner, and a draft GitHub issue, built on MCP.",
+    "description": "Report the symptom. Culprit names the cause - root-cause hypothesis, suspected owner, and a draft GitHub issue, built on MCP.",
     "background_color": "#1f2d3d"
   },
   "features": {

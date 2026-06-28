@@ -1,6 +1,5 @@
 import type { App } from "@slack/bolt";
 import type { AppConfig } from "../config.js";
-import { GitHubMcpBridge } from "../mcp/githubClient.js";
 import { runTriage } from "../triage/brain.js";
 import { createGithubIssue, type DraftIssue } from "../github/issues.js";
 import { ACTION_CREATE_ISSUE, renderTriageBlocks } from "./blocks.js";
@@ -48,13 +47,10 @@ export function registerHandlers(app: App, config: AppConfig): void {
       text: "🔍 Investigating — gathering evidence from GitHub…",
     });
 
-    const bridge = new GitHubMcpBridge(config);
     try {
-      await bridge.connect();
       const repo = parseRepo(report, config.GITHUB_DEFAULT_REPO);
       const result = await runTriage(
         config,
-        bridge,
         { report, repo, reportedBy: userName },
         async (note) => {
           if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text: `🔍 ${note}…` });
@@ -71,8 +67,6 @@ export function registerHandlers(app: App, config: AppConfig): void {
       const text = `⚠️ I couldn't complete triage: ${message}`;
       if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text });
       else await client.chat.postMessage({ channel, thread_ts: threadTs, text });
-    } finally {
-      await bridge.close();
     }
   };
 

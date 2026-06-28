@@ -6,25 +6,42 @@ import { z } from "zod";
  * message if a required secret is missing — never trust the environment to be
  * complete (see ECC security rules: validate required secrets at startup).
  */
-const EnvSchema = z.object({
-  SLACK_BOT_TOKEN: z.string().min(1, "SLACK_BOT_TOKEN is required (xoxb-...)"),
-  SLACK_APP_TOKEN: z.string().min(1, "SLACK_APP_TOKEN is required (xapp-...) for Socket Mode"),
+const EnvSchema = z
+  .object({
+    SLACK_BOT_TOKEN: z.string().min(1, "SLACK_BOT_TOKEN is required (xoxb-...)"),
+    SLACK_APP_TOKEN: z.string().min(1, "SLACK_APP_TOKEN is required (xapp-...) for Socket Mode"),
 
-  ANTHROPIC_API_KEY: z.string().min(1, "ANTHROPIC_API_KEY is required"),
-  TRIAGE_MODEL: z.string().default("claude-opus-4-8"),
+    // Which LLM drives the triage brain.
+    LLM_PROVIDER: z.enum(["anthropic", "gemini"]).default("anthropic"),
 
-  GITHUB_TOKEN: z.string().min(1, "GITHUB_TOKEN is required to read repo context"),
-  GITHUB_DEFAULT_REPO: z
-    .string()
-    .regex(/^[^/\s]+\/[^/\s]+$/, "GITHUB_DEFAULT_REPO must look like owner/repo")
-    .optional(),
+    // Anthropic (used when LLM_PROVIDER=anthropic) — gathers evidence over the GitHub MCP server.
+    ANTHROPIC_API_KEY: z.string().optional(),
+    TRIAGE_MODEL: z.string().default("claude-opus-4-8"),
 
-  GITHUB_MCP_MODE: z.enum(["remote", "local"]).default("remote"),
-  GITHUB_MCP_URL: z.string().url().default("https://api.githubcopilot.com/mcp/"),
+    // Gemini (used when LLM_PROVIDER=gemini) — free tier; gathers evidence via the GitHub API.
+    GEMINI_API_KEY: z.string().optional(),
+    GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
 
-  TRIAGE_MAX_STEPS: z.coerce.number().int().positive().max(20).default(6),
-  LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
-});
+    GITHUB_TOKEN: z.string().min(1, "GITHUB_TOKEN is required to read repo context"),
+    GITHUB_DEFAULT_REPO: z
+      .string()
+      .regex(/^[^/\s]+\/[^/\s]+$/, "GITHUB_DEFAULT_REPO must look like owner/repo")
+      .optional(),
+
+    GITHUB_MCP_MODE: z.enum(["remote", "local"]).default("remote"),
+    GITHUB_MCP_URL: z.string().url().default("https://api.githubcopilot.com/mcp/"),
+
+    TRIAGE_MAX_STEPS: z.coerce.number().int().positive().max(20).default(6),
+    LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
+  })
+  .superRefine((cfg, ctx) => {
+    if (cfg.LLM_PROVIDER === "anthropic" && !cfg.ANTHROPIC_API_KEY) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["ANTHROPIC_API_KEY"], message: "required when LLM_PROVIDER=anthropic" });
+    }
+    if (cfg.LLM_PROVIDER === "gemini" && !cfg.GEMINI_API_KEY) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, path: ["GEMINI_API_KEY"], message: "required when LLM_PROVIDER=gemini" });
+    }
+  });
 
 export type AppConfig = z.infer<typeof EnvSchema>;
 

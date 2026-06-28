@@ -2,7 +2,6 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import { loadConfig } from "../config.js";
-import { GitHubMcpBridge } from "../mcp/githubClient.js";
 import { runTriage } from "../triage/brain.js";
 
 /**
@@ -23,16 +22,12 @@ async function main(): Promise<void> {
       repo: z.string().optional().describe("owner/repo to investigate. Defaults to the server's configured repo."),
     },
     async ({ report, repo }) => {
-      const bridge = new GitHubMcpBridge(config);
       try {
-        await bridge.connect();
-        const result = await runTriage(config, bridge, { report, repo });
+        const result = await runTriage(config, { report, repo });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         return { content: [{ type: "text", text: `Triage failed: ${message}` }], isError: true };
-      } finally {
-        await bridge.close();
       }
     },
   );
