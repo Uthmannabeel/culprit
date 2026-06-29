@@ -5,7 +5,9 @@ evidence-backed verdict and a filed GitHub issue — and make the MCP story expl
 
 **Setup before recording:** `npm run dev` running; bot invited to a demo channel;
 `GITHUB_DEFAULT_REPO` pointing at a repo that has a real, recent breaking change
-(seed one if needed — e.g. a commit/PR that removes an env-var read).
+(seed one if needed — e.g. a commit/PR that removes an env-var read). Pick the brain
+with `LLM_PROVIDER` (`gemini` for the free-tier path, `anthropic` for Claude+MCP).
+Sanity-check evidence access first with `npm run verify:evidence`.
 
 ---
 
@@ -18,8 +20,8 @@ Type in the channel:
 > `@Culprit checkout is throwing 500s since this morning repo:acme/store`
 
 Culprit replies **🔍 Investigating…** and the status updates live
-(*"Checking GitHub: search_pull_requests"*) — point out it's **gathering real
-evidence over MCP**, not guessing.
+(*"Checking GitHub: list_recent_pull_requests"*) — point out it's **gathering real,
+multi-signal evidence** (merged PRs, commits, issues, code), not guessing.
 
 ### 0:45 — The verdict (45s)
 The card lands. Walk through it:
@@ -46,6 +48,11 @@ Optionally run `npm run mcp` and show the tool being listed/called.
 > writes when a human clicks. Honest, evidence-backed triage — that's Culprit."
 
 ---
+
+**Backup if the live Slack connection is flaky:** run `npm run demo:mcp` — an external
+MCP client calls Culprit's `triage_incident` over stdio and prints the full verdict.
+This is a Slack-independent, recordable artifact that proves brain + evidence + the
+served MCP server end-to-end.
 
 **Backup if GitHub is rate-limited / offline:** pre-record the verdict card, or point
 `GITHUB_DEFAULT_REPO` at a small public repo with a known recent change.

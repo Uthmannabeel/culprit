@@ -31,13 +31,17 @@ how much evidence it found. Honest scope is a feature.
 
 - **Slack:** `@slack/bolt` v4 in **Socket Mode** — an outbound WebSocket, so Culprit
   runs anywhere (including behind a corporate firewall) with no public URL.
-- **Brain:** the Anthropic SDK driving `claude-opus-4-8` with adaptive thinking, in a
-  bounded **agentic tool-use loop**. Claude decides which GitHub tools to call; we
-  execute them and feed results back until it calls a structured `submit_triage`
-  finalizer that returns a validated verdict.
+- **Brain (pluggable):** a bounded **agentic tool-use loop** that decides which GitHub
+  tools to call, executes them, and feeds results back until it calls a structured
+  `submit_triage` finalizer returning a validated verdict. Two interchangeable brains:
+  the Anthropic SDK driving `claude-opus-4-8` (adaptive thinking) over the GitHub MCP
+  server, or a free-tier `gemini-2.5-flash` brain over the GitHub REST API.
+- **Multi-signal evidence:** rather than betting on one source, Culprit cross-checks
+  recently merged **pull requests** (the strongest "what changed / who to ask" clue),
+  recent **commits**, open **issues**, and a **code search** to locate the affected file.
 - **MCP on both sides:** Culprit **consumes** the GitHub MCP server as its read-only
   evidence source, and **ships its own** MCP server exposing a `triage_incident` tool,
-  so any other MCP-speaking agent can reuse Culprit.
+  so any other MCP-speaking agent can reuse Culprit — regardless of which brain runs.
 - **Write-path:** filing the issue is a deterministic, explicit, human-clicked GitHub
   REST call — the autonomous loop itself is read-only.
 - Built on the **ECC (Everything Claude Code)** agent harness; TypeScript, tested,

@@ -47,11 +47,29 @@ The brain runs a bounded agentic loop: Claude decides which GitHub MCP tools to
 call, we execute them, feed results back, and repeat until it calls `submit_triage`
 with a validated, structured verdict. See [`architecture_diagram.md`](./architecture_diagram.md).
 
+The brain cross-checks **more than one signal** before concluding — recently merged
+pull requests (the strongest "what changed / who to ask" clue), recent commits, open
+issues, and a code search to locate the affected file — rather than betting on a single
+source. Run `npm run verify:evidence` to confirm every signal works against your repo.
+
+## Pluggable brain
+
+Culprit ships two interchangeable brains, selected with `LLM_PROVIDER`:
+
+- **`anthropic`** — Claude runs the agentic loop and gathers evidence over the **GitHub
+  MCP server** (the consume-MCP path).
+- **`gemini`** — a free-tier brain that gathers the same multi-signal evidence over the
+  **GitHub REST API** (handy when an outbound MCP connection isn't available).
+
+Either way Culprit **ships its own MCP server** (`triage_incident`), so the
+"consume on one side, serve on the other" story holds regardless of brain.
+
 ## Stack
 
 - **TypeScript** (ESM, Node ≥ 20)
 - **[@slack/bolt](https://tools.slack.dev/bolt-js/) v4** in **Socket Mode**
 - **[@anthropic-ai/sdk](https://github.com/anthropics/anthropic-sdk-typescript)** — `claude-opus-4-8`, adaptive thinking
+- **[@google/genai](https://github.com/googleapis/js-genai)** — `gemini-2.5-flash` (free-tier brain)
 - **[@modelcontextprotocol/sdk](https://github.com/modelcontextprotocol)** — GitHub MCP client + Culprit's own MCP server
 
 ## Quick start
@@ -75,6 +93,8 @@ npm run mcp
 | `npm run dev` | Start the Slack agent (Socket Mode) with hot reload |
 | `npm start` | Start the Slack agent |
 | `npm run mcp` | Start Culprit's MCP server (stdio) |
+| `npm run demo:mcp` | Call Culprit's MCP server as an external agent (no Slack needed) |
+| `npm run verify:evidence` | Check every GitHub evidence signal works against your repo |
 | `npm run typecheck` | Type-check the project |
 | `npm test` | Run the test suite |
 
@@ -84,9 +104,10 @@ See [`.env.example`](./.env.example). You need:
 
 - A **Slack app** (bot token `xoxb-…` + app-level token `xapp-…`). Create it from
   [`manifest.json`](./manifest.json) — see [`docs/SETUP.md`](./docs/SETUP.md).
-- An **Anthropic API key**.
-- A **GitHub token** with repo read (and `issues: write` to file issues), plus a
-  default `owner/repo`.
+- A **brain key**: a **Gemini API key** (`LLM_PROVIDER=gemini`, free tier) or an
+  **Anthropic API key** (`LLM_PROVIDER=anthropic`).
+- A **GitHub token** with read on Contents, Pull requests, and Issues (plus
+  `Issues: write` to file issues), and a default `owner/repo`.
 
 ## Security
 
@@ -104,12 +125,16 @@ src/
   app.ts               # Bolt app wiring
   slack/handlers.ts    # @mention / DM triggers + create-issue action
   slack/blocks.ts      # Block Kit rendering
-  triage/brain.ts      # agentic tool-use loop (Claude + GitHub MCP)
+  triage/brain.ts      # provider switch (anthropic | gemini)
+  triage/brainClaude.ts # agentic loop on Claude + GitHub MCP
+  triage/brainGemini.ts # agentic loop on Gemini + GitHub REST evidence
   triage/prompt.ts     # system prompt
   triage/types.ts      # TriageResult schema
   mcp/githubClient.ts  # GitHub MCP client bridge
+  github/evidence.ts   # read-only multi-signal evidence (commits/PRs/issues/code)
   github/issues.ts     # file an issue via GitHub REST
   server/triageMcpServer.ts  # Culprit's own MCP server
+  demo/                # MCP client demo + evidence verifier
 .claude/               # ECC (Everything Claude Code) agent harness
 ```
 
