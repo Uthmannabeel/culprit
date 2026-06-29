@@ -12,6 +12,7 @@
     "start": "tsx src/index.ts",
     "mcp": "tsx src/server/triageMcpServer.ts",
     "demo:mcp": "tsx src/demo/mcpClientDemo.ts",
+    "verify:evidence": "tsx src/demo/verifyEvidence.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
