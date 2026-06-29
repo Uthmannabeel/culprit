@@ -3,7 +3,14 @@ import type { Content, FunctionDeclaration, Part } from "@google/genai";
 import type { AppConfig } from "../config.js";
 import { TRIAGE_SYSTEM_PROMPT, buildTriageUserMessage } from "./prompt.js";
 import { TriageResultSchema, type TriageRequest, type TriageResult } from "./types.js";
-import { listRecentCommits, getCommit, getFileContents } from "../github/evidence.js";
+import {
+  listRecentCommits,
+  getCommit,
+  getFileContents,
+  listRecentPullRequests,
+  listOpenIssues,
+  searchCode,
+} from "../github/evidence.js";
 import type { ProgressFn } from "./brainClaude.js";
 
 /** Read-only GitHub evidence tools, with Gemini-friendly schemas. */
@@ -32,6 +39,37 @@ const EVIDENCE_TOOLS: FunctionDeclaration[] = [
       type: Type.OBJECT,
       properties: { path: { type: Type.STRING, description: "Path to the file, e.g. src/payments.js." } },
       required: ["path"],
+    },
+  },
+  {
+    name: "list_recent_pull_requests",
+    description:
+      "List recently updated pull requests (number, title, state, merged flag, author, mergedAt, url). A recently MERGED PR with a clear author is the strongest signal for what changed and who to ask.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        state: { type: Type.STRING, enum: ["closed", "open", "all"], description: "Which PRs to list. Default closed (most recently merged)." },
+        perPage: { type: Type.NUMBER, description: "How many PRs (max 30)." },
+      },
+    },
+  },
+  {
+    name: "list_open_issues",
+    description:
+      "List open issues (number, title, author, createdAt, labels, url). Use to check whether the incident is already reported or relates to a known problem area.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: { perPage: { type: Type.NUMBER, description: "How many issues (max 30)." } },
+    },
+  },
+  {
+    name: "search_code",
+    description:
+      "Search the repository's code for a term from the report (a route like /checkout, a symbol, or an error string) to locate the affected file instead of guessing from recent commits.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: { query: { type: Type.STRING, description: "Search term, e.g. checkout or STRIPE_API_KEY." } },
+      required: ["query"],
     },
   },
 ];
@@ -93,6 +131,17 @@ async function runEvidenceTool(
     }
     if (name === "get_file_contents") {
       return await getFileContents(config, repo, String(args.path));
+    }
+    if (name === "list_recent_pull_requests") {
+      const state = args.state === "open" || args.state === "all" ? args.state : "closed";
+      const prs = await listRecentPullRequests(config, repo, state, Number(args.perPage) || 10);
+      return JSON.stringify(prs);
+    }
+    if (name === "list_open_issues") {
+      return JSON.stringify(await listOpenIssues(config, repo, Number(args.perPage) || 10));
+    }
+    if (name === "search_code") {
+      return JSON.stringify(await searchCode(config, repo, String(args.query)));
     }
     return `Unknown tool: ${name}`;
   } catch (err) {

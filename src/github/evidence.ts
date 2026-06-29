@@ -97,3 +97,106 @@ export async function getFileContents(config: AppConfig, repo: string, path: str
   }
   return "(no readable content)";
 }
+
+export interface PullRequestSummary {
+  number: number;
+  title: string;
+  state: string;
+  merged: boolean;
+  author: string;
+  mergedAt: string | null;
+  url: string;
+}
+
+/**
+ * Recently updated pull requests. A recently MERGED PR with a clear author is
+ * the single strongest triage signal — it tells you exactly what changed and
+ * who to ask. Defaults to closed PRs (most recently merged first).
+ */
+export async function listRecentPullRequests(
+  config: AppConfig,
+  repo: string,
+  state: "closed" | "open" | "all" = "closed",
+  perPage = 10,
+): Promise<PullRequestSummary[]> {
+  const [owner, name] = splitRepo(repo);
+  const data = (await ghGet(
+    config,
+    `/repos/${owner}/${name}/pulls?state=${state}&sort=updated&direction=desc&per_page=${Math.min(perPage, 30)}`,
+  )) as Array<{
+    number: number;
+    title: string;
+    state: string;
+    merged_at?: string | null;
+    html_url: string;
+    user?: { login?: string } | null;
+  }>;
+  return data.map((p) => ({
+    number: p.number,
+    title: p.title,
+    state: p.state,
+    merged: Boolean(p.merged_at),
+    author: p.user?.login ?? "unknown",
+    mergedAt: p.merged_at ?? null,
+    url: p.html_url,
+  }));
+}
+
+export interface IssueSummary {
+  number: number;
+  title: string;
+  author: string;
+  createdAt: string;
+  url: string;
+  labels: string[];
+}
+
+/**
+ * Open issues on the repo (pull requests are filtered out — the issues API
+ * returns both). Useful for spotting whether the incident is already reported
+ * or relates to a known problem area.
+ */
+export async function listOpenIssues(config: AppConfig, repo: string, perPage = 10): Promise<IssueSummary[]> {
+  const [owner, name] = splitRepo(repo);
+  const data = (await ghGet(
+    config,
+    `/repos/${owner}/${name}/issues?state=open&sort=updated&direction=desc&per_page=${Math.min(perPage, 30)}`,
+  )) as Array<{
+    number: number;
+    title: string;
+    html_url: string;
+    created_at: string;
+    pull_request?: unknown;
+    user?: { login?: string } | null;
+    labels?: Array<{ name?: string } | string>;
+  }>;
+  return data
+    .filter((i) => !i.pull_request)
+    .map((i) => ({
+      number: i.number,
+      title: i.title,
+      author: i.user?.login ?? "unknown",
+      createdAt: i.created_at,
+      url: i.html_url,
+      labels: (i.labels ?? []).map((l) => (typeof l === "string" ? l : (l.name ?? ""))).filter(Boolean),
+    }));
+}
+
+export interface CodeMatch {
+  path: string;
+  url: string;
+}
+
+/**
+ * Search the repo's code for a term (e.g. a route, symbol, or error string from
+ * the report) to locate the affected area instead of guessing from recent
+ * commits alone. Uses GitHub's code search; results are best-effort.
+ */
+export async function searchCode(config: AppConfig, repo: string, query: string, perPage = 8): Promise<CodeMatch[]> {
+  const [owner, name] = splitRepo(repo);
+  const q = encodeURIComponent(`${query} repo:${owner}/${name}`);
+  const data = (await ghGet(config, `/search/code?q=${q}&per_page=${Math.min(perPage, 20)}`)) as {
+    items?: Array<{ path: string; html_url: string }>;
+  };
+  return (data.items ?? []).map((m) => ({ path: m.path, url: m.html_url }));
+}
