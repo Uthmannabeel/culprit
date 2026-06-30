@@ -25,27 +25,40 @@ multi-signal evidence** (merged PRs, commits, issues, code), not guessing.
 
 ### 0:45 — The verdict (45s)
 The card lands. Walk through it:
+- **🧠 We've seen this before** — a similar past incident, what fixed it, and who. This
+  is the wedge: *"Culprit recognised this matches an incident dana resolved in April."*
 - **Likely cause (hypothesis)** — names the suspect change.
 - **Evidence** — each line links to a **real** commit / PR / file it pulled.
 - **Suspected owner** — from commit/PR authorship.
-- **Confidence bar** — calibrated to the evidence.
-> "Notice it says *hypothesis* — every claim links to a source it actually found."
+- **Confidence bar** — higher *because* memory corroborates the code.
+> "Notice it says *hypothesis* — every claim links to a source it actually found, and it
+> remembers what your team already solved."
 
 ### 1:30 — One-click issue (25s)
 Click **📝 Create GitHub issue**. Culprit posts **✅ Filed #123**. Open the link —
 a clean, pre-written issue with title, body, and labels.
 > "From a one-line Slack message to a filed, triaged issue — without leaving the thread."
 
-### 1:55 — The MCP story (35s)
+### 1:55 — Close the loop, and it gets smarter (30s)
+Click **✅ Mark resolved**. A modal asks *what actually fixed it* and whether the
+hypothesis was right. Submit → Culprit replies **🧠 Logged to memory**.
+> "That fix is now part of the org's memory. The next time this rhymes, Culprit recalls
+> it — it compounds with every incident."
+
+To prove the compounding without Slack, run `npm run verify:learning`: a paraphrased
+report matches **nothing**, Culprit learns the incident, and the same report then recalls
+the exact fix and who applied it.
+
+### 2:25 — The MCP story (35s)
 Show the architecture diagram. 
 > "Culprit is built on MCP on **both** sides. It **consumes** the GitHub MCP server
 > for evidence — and it **ships its own** MCP server, so any other agent can call
 > `triage_incident`."
 Optionally run `npm run mcp` and show the tool being listed/called.
 
-### 2:30 — Close (20s)
-> "Socket Mode means it runs anywhere with no public URL. It reads over MCP and only
-> writes when a human clicks. Honest, evidence-backed triage — that's Culprit."
+### 3:00 — Close (20s)
+> "It runs anywhere over Socket Mode, reads over MCP, writes only when a human clicks —
+> and it remembers. Honest, evidence-backed triage that compounds. That's Culprit."
 
 ---
 

@@ -24,6 +24,10 @@ what worked"*), and gets more confident with every incident it closes. That know
 which normally evaporates in a thread, is something Sentry/Rootly can't touch — because it
 lives in **your** Slack and GitHub history.
 
+The loop closes in Slack: when an incident is fixed, click **✅ Mark resolved**, tell
+Culprit *what actually fixed it*, and it writes that back to memory — so the calibrated
+confidence is **earned**, not guessed. Try it headless with `npm run verify:learning`.
+
 ---
 
 ## Why it fits the challenge
@@ -108,6 +112,7 @@ npm run mcp
 | `npm run demo:mcp` | Call Culprit's MCP server as an external agent (no Slack needed) |
 | `npm run verify:evidence` | Check every GitHub evidence signal works against your repo |
 | `npm run verify:memory` | Check incident recall (embeddings) against the seeded memory |
+| `npm run verify:learning` | Prove the learning loop: remember an incident, then recall it |
 | `npm run list:models` | List which embedding models your Gemini key supports |
 | `npm run typecheck` | Type-check the project |
 | `npm test` | Run the test suite |

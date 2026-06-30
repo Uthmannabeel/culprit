@@ -49,6 +49,10 @@ in your workspace.
   recalled by semantic similarity, with a lexical fallback so recall never hard-fails.
   A recall feeds the loop as first-class evidence and a reliable "we've seen this before"
   panel — this is the compounding asset that sets Culprit apart from one-shot triagers.
+- **The learning loop:** a "✅ Mark resolved" button opens a modal that captures *what
+  actually fixed it* and whether the hypothesis was right, then writes it back to memory.
+  Confidence is therefore **earned** — the next matching incident recalls a real outcome
+  your team produced, not a guess.
 - **Multi-signal evidence:** rather than betting on one source, Culprit cross-checks
   recently merged **pull requests** (the strongest "what changed / who to ask" clue),
   recent **commits**, open **issues**, and a **code search** to locate the affected file.

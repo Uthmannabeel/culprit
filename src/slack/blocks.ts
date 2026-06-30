@@ -1,5 +1,6 @@
 import type { KnownBlock } from "@slack/types";
 import type { TriageResult } from "../triage/types.js";
+import { ACTION_MARK_RESOLVED, type ResolveContext } from "./resolve.js";
 
 /** Action IDs for interactive components. */
 export const ACTION_CREATE_ISSUE = "triage_create_issue";
@@ -20,7 +21,7 @@ function confidenceBar(confidence: number): string {
  * Render a triage verdict as Slack Block Kit. The draftIssue is stashed in the
  * button value so the action handler can file it without re-running analysis.
  */
-export function renderTriageBlocks(result: TriageResult, repo: string): KnownBlock[] {
+export function renderTriageBlocks(result: TriageResult, repo: string, report?: string): KnownBlock[] {
   const blocks: KnownBlock[] = [
     {
       type: "header",
@@ -99,6 +100,15 @@ export function renderTriageBlocks(result: TriageResult, repo: string): KnownBlo
       }_`,
     },
   });
+  const resolveCtx: ResolveContext = {
+    symptom: (report ?? result.summary).slice(0, 300),
+    hypothesis: result.rootCauseHypothesis.slice(0, 600),
+    repo,
+    suspectedOwner: result.suspectedOwner,
+    link: result.evidence.find((e) => e.url)?.url ?? result.priorIncidents[0]?.url ?? null,
+    channel: null,
+    threadTs: null,
+  };
   blocks.push({
     type: "actions",
     elements: [
@@ -108,6 +118,12 @@ export function renderTriageBlocks(result: TriageResult, repo: string): KnownBlo
         text: { type: "plain_text", text: "📝 Create GitHub issue", emoji: true },
         action_id: ACTION_CREATE_ISSUE,
         value: JSON.stringify({ repo, issue: result.draftIssue }),
+      },
+      {
+        type: "button",
+        text: { type: "plain_text", text: "✅ Mark resolved", emoji: true },
+        action_id: ACTION_MARK_RESOLVED,
+        value: JSON.stringify(resolveCtx),
       },
     ],
   });

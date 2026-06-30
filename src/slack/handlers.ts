@@ -3,6 +3,15 @@ import type { AppConfig } from "../config.js";
 import { runTriage } from "../triage/brain.js";
 import { createGithubIssue, type DraftIssue } from "../github/issues.js";
 import { ACTION_CREATE_ISSUE, renderTriageBlocks } from "./blocks.js";
+import { IncidentMemory } from "../memory/store.js";
+import {
+  ACTION_MARK_RESOLVED,
+  VIEW_MARK_RESOLVED,
+  buildResolveModal,
+  buildResolvedIncident,
+  parseResolveSubmission,
+  type ResolveContext,
+} from "./resolve.js";
 
 /** Pull an explicit repo out of the message text, else fall back to default. */
 function parseRepo(text: string, fallback?: string): string | undefined {
@@ -56,7 +65,7 @@ export function registerHandlers(app: App, config: AppConfig): void {
           if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text: `🔍 ${note}…` });
         },
       );
-      const blocks = renderTriageBlocks(result, repo ?? "unknown");
+      const blocks = renderTriageBlocks(result, repo ?? "unknown", report);
       if (ack.ts) {
         await client.chat.update({ channel, ts: ack.ts, text: result.summary, blocks });
       } else {
@@ -115,6 +124,43 @@ export function registerHandlers(app: App, config: AppConfig): void {
       const message = err instanceof Error ? err.message : String(err);
       if (channel) {
         await client.chat.postMessage({ channel, thread_ts: threadTs, text: `⚠️ Couldn't create the issue: ${message}` });
+      }
+    }
+  });
+
+  // Button: open the "what fixed it?" modal so Culprit can learn from the outcome.
+  app.action(ACTION_MARK_RESOLVED, async ({ ack, body, client, action }) => {
+    await ack();
+    const ctx = JSON.parse((action as { value: string }).value) as ResolveContext;
+    ctx.channel = (body as { channel?: { id: string } }).channel?.id ?? null;
+    ctx.threadTs = (body as { message?: { ts: string } }).message?.ts ?? null;
+    const triggerId = (body as { trigger_id?: string }).trigger_id;
+    if (triggerId) await client.views.open({ trigger_id: triggerId, view: buildResolveModal(ctx) });
+  });
+
+  // Modal submit: write the resolved incident into memory — the learning loop.
+  app.view(VIEW_MARK_RESOLVED, async ({ ack, view, client }) => {
+    await ack();
+    const ctx = JSON.parse(view.private_metadata || "{}") as ResolveContext;
+    const fields = parseResolveSubmission(view.state.values as never);
+    const id = `inc-${ctx.threadTs ?? Date.now()}`;
+    const record = buildResolvedIncident(ctx, fields, id, new Date().toISOString());
+
+    try {
+      const memory = new IncidentMemory(config);
+      await memory.remember(record);
+      if (ctx.channel) {
+        const fix = record.resolution ? `: _${record.resolution}_` : ".";
+        await client.chat.postMessage({
+          channel: ctx.channel,
+          thread_ts: ctx.threadTs ?? undefined,
+          text: `🧠 Logged to memory${fix}\nNext time something like *${ctx.symptom}* is reported, Culprit will recall this.`,
+        });
+      }
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      if (ctx.channel) {
+        await client.chat.postMessage({ channel: ctx.channel, thread_ts: ctx.threadTs ?? undefined, text: `⚠️ Couldn't save to memory: ${message}` });
       }
     }
   });
