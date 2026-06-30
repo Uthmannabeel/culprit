@@ -12,6 +12,7 @@ const sample: TriageResult = {
     { kind: "pull_request", title: "Refactor payment client #482", url: "https://github.com/o/r/pull/482", why: "Touched checkout init" },
     { kind: "commit", title: "remove legacy key loader", url: null, why: "Removed env var read" },
   ],
+  priorIncidents: [],
   recommendedActions: ["Roll back PR #482", "Verify STRIPE_API_KEY is set in prod"],
   draftIssue: { title: "Checkout 500s after payment refactor", body: "## Summary\n...", labels: ["bug", "sev1"] },
 };
@@ -46,6 +47,27 @@ describe("renderTriageBlocks", () => {
     const payload = JSON.parse(button!.value) as { repo: string; issue: { title: string } };
     expect(payload.repo).toBe("o/r");
     expect(payload.issue.title).toBe(sample.draftIssue.title);
+  });
+
+  test("renders a 'seen before' panel when prior incidents exist", () => {
+    const withPrior = renderTriageBlocks(
+      {
+        ...sample,
+        priorIncidents: [
+          { id: "inc-1", symptom: "checkout 500s after deploy", resolution: "restored env var", resolvedBy: "dana", similarity: 0.77, url: "https://x/pr/1" },
+        ],
+      },
+      "o/r",
+    );
+    const text = JSON.stringify(withPrior);
+    expect(text).toContain("seen this before");
+    expect(text).toContain("77% match");
+    expect(text).toContain("dana");
+  });
+
+  test("omits the 'seen before' panel when there are no prior incidents", () => {
+    const text = JSON.stringify(renderTriageBlocks(sample, "o/r"));
+    expect(text).not.toContain("seen this before");
   });
 
   test("escapes angle brackets in untrusted text", () => {

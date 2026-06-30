@@ -20,10 +20,27 @@ export const TriageResultSchema = z.object({
   evidence: z
     .array(
       z.object({
-        kind: z.enum(["commit", "pull_request", "issue", "file", "other"]),
+        kind: z.enum(["commit", "pull_request", "issue", "file", "past_incident", "other"]),
         title: z.string(),
         url: z.string().nullable(),
         why: z.string(),
+      }),
+    )
+    .default([]),
+  /**
+   * Similar incidents the org has resolved before — Culprit's institutional
+   * memory. Attached from recall so the "we've seen this before" panel is
+   * reliable, not dependent on the model remembering to cite it.
+   */
+  priorIncidents: z
+    .array(
+      z.object({
+        id: z.string(),
+        symptom: z.string(),
+        resolution: z.string(),
+        resolvedBy: z.string().nullable(),
+        similarity: z.number(),
+        url: z.string().nullable(),
       }),
     )
     .default([]),

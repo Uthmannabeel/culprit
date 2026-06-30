@@ -24,7 +24,7 @@ const SUBMIT_TOOL: Anthropic.Tool = {
           type: "object",
           additionalProperties: false,
           properties: {
-            kind: { type: "string", enum: ["commit", "pull_request", "issue", "file", "other"] },
+            kind: { type: "string", enum: ["commit", "pull_request", "issue", "file", "past_incident", "other"] },
             title: { type: "string" },
             url: { type: ["string", "null"] },
             why: { type: "string", description: "Why this evidence supports the hypothesis." },

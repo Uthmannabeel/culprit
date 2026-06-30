@@ -21,6 +21,16 @@ const EnvSchema = z
     // Gemini (used when LLM_PROVIDER=gemini) — free tier; gathers evidence via the GitHub API.
     GEMINI_API_KEY: z.string().optional(),
     GEMINI_MODEL: z.string().default("gemini-2.5-flash"),
+    // Embedding model for incident memory recall (free tier).
+    EMBEDDING_MODEL: z.string().default("gemini-embedding-001"),
+
+    // Incident memory — Culprit's institutional knowledge of past incidents.
+    INCIDENTS_DB_PATH: z.string().default("data/incidents.json"),
+    MEMORY_RECALL_K: z.coerce.number().int().positive().max(10).default(3),
+    // Tuned for gemini-embedding-001, whose cosine floor for unrelated text is
+    // ~0.55. 0.70 keeps recall precise — a wrong "we've seen this" is worse than
+    // none. Lower it if you switch to a model with wider score separation.
+    MEMORY_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.7),
 
     GITHUB_TOKEN: z.string().min(1, "GITHUB_TOKEN is required to read repo context"),
     GITHUB_DEFAULT_REPO: z

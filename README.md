@@ -4,13 +4,25 @@
 
 Culprit is a Slack agent for the [Slack Agent Builder Challenge](https://slackhack.devpost.com/).
 You report an incident in a channel — *"checkout is throwing 500s"* — and Culprit
-investigates: it gathers **real evidence** from your GitHub repo over **MCP**
-(recent commits, pull requests, issues, files touching the affected area), forms
-the most likely **root-cause hypothesis**, names the **suspected owner**, and drafts
-a **fileable GitHub issue** you can create with one click — without leaving the thread.
+investigates. First it asks **"have we seen this before?"** and recalls your org's past
+resolved incidents from memory; then it gathers **real evidence** from GitHub over **MCP**
+(merged PRs, commits, issues, files), forms the most likely **root-cause hypothesis**,
+names the **suspected owner**, and drafts a **fileable GitHub issue** you can create with
+one click — without leaving the thread.
 
 > Culprit proposes a *hypothesis backed by evidence*, not a magic verdict. Every
 > conclusion cites a real source it pulled. Honest scope is the point.
+
+## Why it's different: institutional memory
+
+Every other triage tool starts from zero on each incident. Culprit doesn't. The richest
+incident data in any company already lives in Slack — every thread where the team
+debugged something and the tribal knowledge of *who fixed what*. Culprit turns that into
+a **searchable, compounding asset**: it remembers each resolved incident, recognizes when
+a new symptom **rhymes** with a past one (*"we've seen this before — fixed by @dana, here's
+what worked"*), and gets more confident with every incident it closes. That knowledge,
+which normally evaporates in a thread, is something Sentry/Rootly can't touch — because it
+lives in **your** Slack and GitHub history.
 
 ---
 
@@ -95,6 +107,8 @@ npm run mcp
 | `npm run mcp` | Start Culprit's MCP server (stdio) |
 | `npm run demo:mcp` | Call Culprit's MCP server as an external agent (no Slack needed) |
 | `npm run verify:evidence` | Check every GitHub evidence signal works against your repo |
+| `npm run verify:memory` | Check incident recall (embeddings) against the seeded memory |
+| `npm run list:models` | List which embedding models your Gemini key supports |
 | `npm run typecheck` | Type-check the project |
 | `npm test` | Run the test suite |
 
@@ -128,13 +142,17 @@ src/
   triage/brain.ts      # provider switch (anthropic | gemini)
   triage/brainClaude.ts # agentic loop on Claude + GitHub MCP
   triage/brainGemini.ts # agentic loop on Gemini + GitHub REST evidence
-  triage/prompt.ts     # system prompt
-  triage/types.ts      # TriageResult schema
+  triage/prompt.ts     # system prompt (recall memory first, then evidence)
+  triage/types.ts      # TriageResult schema (incl. priorIncidents)
+  memory/store.ts      # incident memory: recall (embeddings) + remember
+  memory/embeddings.ts # Gemini embeddings wrapper
+  memory/similarity.ts # cosine + lexical-fallback scoring (pure, tested)
   mcp/githubClient.ts  # GitHub MCP client bridge
   github/evidence.ts   # read-only multi-signal evidence (commits/PRs/issues/code)
   github/issues.ts     # file an issue via GitHub REST
   server/triageMcpServer.ts  # Culprit's own MCP server
-  demo/                # MCP client demo + evidence verifier
+  demo/                # MCP client demo + evidence/memory verifiers
+data/incidents.json    # seeded past incidents (the institutional memory)
 .claude/               # ECC (Everything Claude Code) agent harness
 ```
 

@@ -1,0 +1,74 @@
+[
+  {
+    "id": "inc-2026-04-12-checkout-payments",
+    "symptom": "Payments failing at checkout with HTTP 500 right after a deploy. Customers can't complete orders.",
+    "rootCause": "A config change renamed the payment provider API key environment variable, but production was still setting the old name, so the payment client initialised with an undefined key.",
+    "resolution": "Re-added the expected env var to the production config (and added a startup check that fails loudly when the payment key is missing).",
+    "resolvedBy": "dana",
+    "links": ["https://github.com/Uthmannabeel/culprit-demo-shop/pull/1"],
+    "repo": "Uthmannabeel/culprit-demo-shop",
+    "createdAt": "2026-04-12T09:20:00Z",
+    "hypothesisWasCorrect": true,
+    "embedding": null
+  },
+  {
+    "id": "inc-2026-03-03-login-redirect-loop",
+    "symptom": "Users stuck in a redirect loop on login; the dashboard keeps bouncing back to the sign-in page.",
+    "rootCause": "A security hardening change set the session cookie SameSite attribute to Strict, so the cookie wasn't sent on the post-OAuth cross-site redirect.",
+    "resolution": "Changed SameSite to Lax for the session cookie and added an integration test for the OAuth callback.",
+    "resolvedBy": "priya",
+    "links": ["https://github.com/acme/store/pull/214"],
+    "repo": "acme/store",
+    "createdAt": "2026-03-03T14:05:00Z",
+    "hypothesisWasCorrect": true,
+    "embedding": null
+  },
+  {
+    "id": "inc-2026-02-18-image-upload-403",
+    "symptom": "Image uploads started returning 403 Forbidden for all users this afternoon.",
+    "rootCause": "An IAM policy update removed the s3:PutObject permission from the uploader role.",
+    "resolution": "Restored the PutObject permission to the uploader role; scoped it to the uploads bucket prefix.",
+    "resolvedBy": "marcus",
+    "links": ["https://github.com/acme/infra/pull/88"],
+    "repo": "acme/infra",
+    "createdAt": "2026-02-18T16:40:00Z",
+    "hypothesisWasCorrect": false,
+    "embedding": null
+  },
+  {
+    "id": "inc-2026-01-29-search-latency",
+    "symptom": "Search is extremely slow — p95 latency jumped from 120ms to 4s after the weekend.",
+    "rootCause": "A schema migration dropped and didn't recreate the index on the products.name column, forcing full table scans.",
+    "resolution": "Recreated the missing index and added a migration lint rule to flag dropped indexes.",
+    "resolvedBy": "dana",
+    "links": ["https://github.com/acme/store/issues/501"],
+    "repo": "acme/store",
+    "createdAt": "2026-01-29T11:15:00Z",
+    "hypothesisWasCorrect": true,
+    "embedding": null
+  },
+  {
+    "id": "inc-2025-12-10-webhooks-dropped",
+    "symptom": "Outbound webhooks are being dropped; partners report missing order events.",
+    "rootCause": "The queue consumer was OOM-killed after a payload size increase and never restarted, so events piled up and expired.",
+    "resolution": "Raised the consumer memory limit, added a dead-letter queue, and an alert on consumer restarts.",
+    "resolvedBy": "sam",
+    "links": ["https://github.com/acme/store/pull/470"],
+    "repo": "acme/store",
+    "createdAt": "2025-12-10T08:00:00Z",
+    "hypothesisWasCorrect": true,
+    "embedding": null
+  },
+  {
+    "id": "inc-2025-11-22-emails-not-sending",
+    "symptom": "Transactional emails (receipts, password resets) stopped sending overnight.",
+    "rootCause": "The email provider API key was rotated but the new key wasn't deployed to the worker service.",
+    "resolution": "Deployed the rotated key to all services and moved the key to the shared secret store.",
+    "resolvedBy": "priya",
+    "links": ["https://github.com/acme/store/issues/489"],
+    "repo": "acme/store",
+    "createdAt": "2025-11-22T22:30:00Z",
+    "hypothesisWasCorrect": true,
+    "embedding": null
+  }
+]

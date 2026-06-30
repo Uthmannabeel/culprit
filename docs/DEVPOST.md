@@ -14,18 +14,27 @@ happen where the incident is already being discussed: **Slack**.
 You report an incident in a Slack channel in plain language — *"checkout is throwing
 500s"* — optionally naming a repo. Culprit:
 
-1. **Gathers real evidence** from GitHub over **MCP** — recent commits, pull requests,
-   issues, and files touching the affected area.
-2. Forms the single most likely **root-cause hypothesis**.
-3. Names the **suspected owner** from commit/PR authorship.
-4. Posts a **Block Kit verdict card** in-thread: hypothesis, calibrated confidence,
-   severity, and **evidence that links back to real sources**.
+1. **Remembers.** First it searches the org's **past resolved incidents** and asks
+   *"have we seen this before?"* If the symptom rhymes with a past one, it surfaces what
+   actually fixed it and who fixed it — its strongest lead.
+2. **Gathers real evidence** from GitHub over **MCP** — recently merged pull requests,
+   commits, issues, and files touching the affected area — and confirms or rules out the
+   recalled pattern against what actually changed.
+3. Forms the single most likely **root-cause hypothesis** and names the **suspected owner**.
+4. Posts a **Block Kit verdict card** in-thread: a *"we've seen this before"* panel,
+   hypothesis, calibrated confidence, severity, and **evidence that links back to real sources**.
 5. Offers a **one-click "Create GitHub issue"** button that files a pre-drafted,
    labelled issue via the GitHub REST API.
 
 Crucially, Culprit proposes a **hypothesis backed by evidence**, not a magic verdict.
 Every claim links to something it actually retrieved, and confidence is calibrated to
-how much evidence it found. Honest scope is a feature.
+how much evidence it found — including whether a near-identical incident was solved
+before. Honest scope is a feature.
+
+The payoff: most triage tools start from zero every time. Culprit treats your Slack and
+GitHub history as a **compounding asset** — it gets smarter with every incident it closes,
+and that institutional memory is something external tools can't replicate because it lives
+in your workspace.
 
 ## How we built it
 
@@ -36,6 +45,10 @@ how much evidence it found. Honest scope is a feature.
   `submit_triage` finalizer returning a validated verdict. Two interchangeable brains:
   the Anthropic SDK driving `claude-opus-4-8` (adaptive thinking) over the GitHub MCP
   server, or a free-tier `gemini-2.5-flash` brain over the GitHub REST API.
+- **Institutional memory:** resolved incidents are embedded (`gemini-embedding-001`) and
+  recalled by semantic similarity, with a lexical fallback so recall never hard-fails.
+  A recall feeds the loop as first-class evidence and a reliable "we've seen this before"
+  panel — this is the compounding asset that sets Culprit apart from one-shot triagers.
 - **Multi-signal evidence:** rather than betting on one source, Culprit cross-checks
   recently merged **pull requests** (the strongest "what changed / who to ask" clue),
   recent **commits**, open **issues**, and a **code search** to locate the affected file.

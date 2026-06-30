@@ -48,6 +48,24 @@ export function renderTriageBlocks(result: TriageResult, repo: string): KnownBlo
     },
   ];
 
+  if (result.priorIncidents.length > 0) {
+    blocks.push({ type: "divider" });
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: "🧠 *We've seen this before*" },
+    });
+    for (const p of result.priorIncidents.slice(0, 3)) {
+      const who = p.resolvedBy ? ` — fixed by *${escape(p.resolvedBy)}*` : "";
+      const link = p.url ? ` <${p.url}|details>` : "";
+      const match = `${Math.round(p.similarity * 100)}% match`;
+      const fix = p.resolution ? `\n   _Last time:_ ${escape(p.resolution)}` : "";
+      blocks.push({
+        type: "section",
+        text: { type: "mrkdwn", text: `• \`${match}\` ${escape(p.symptom)}${who}${link}${fix}` },
+      });
+    }
+  }
+
   if (result.evidence.length > 0) {
     blocks.push({ type: "divider" });
     blocks.push({ type: "section", text: { type: "mrkdwn", text: "*Evidence*" } });
