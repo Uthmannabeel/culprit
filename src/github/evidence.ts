@@ -64,7 +64,7 @@ export interface CommitDetail extends CommitSummary {
 /** Full detail for one commit, including the diff of each changed file. */
 export async function getCommit(config: AppConfig, repo: string, sha: string): Promise<CommitDetail> {
   const [owner, name] = splitRepo(repo);
-  const c = (await ghGet(config, `/repos/${owner}/${name}/commits/${sha}`)) as {
+  const c = (await ghGet(config, `/repos/${owner}/${name}/commits/${encodeURIComponent(sha)}`)) as {
     sha: string;
     html_url: string;
     commit: { message: string; author?: { date?: string } };
@@ -88,7 +88,13 @@ export async function getCommit(config: AppConfig, repo: string, sha: string): P
 /** Decoded contents of a file at the default branch. */
 export async function getFileContents(config: AppConfig, repo: string, path: string): Promise<string> {
   const [owner, name] = splitRepo(repo);
-  const data = (await ghGet(config, `/repos/${owner}/${name}/contents/${path}`)) as {
+  if (path.split("/").includes("..")) throw new Error(`Refusing to read path with '..' segment: ${path}`);
+  // Encode each segment but keep the slashes that separate directories.
+  const safePath = path
+    .split("/")
+    .map((seg) => encodeURIComponent(seg))
+    .join("/");
+  const data = (await ghGet(config, `/repos/${owner}/${name}/contents/${safePath}`)) as {
     content?: string;
     encoding?: string;
   };

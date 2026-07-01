@@ -1,8 +1,25 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { AppConfig } from "../config.js";
 import { GitHubMcpBridge } from "../mcp/githubClient.js";
+import { IncidentMemory } from "../memory/store.js";
+import type { RecallHit } from "../memory/types.js";
 import { TRIAGE_SYSTEM_PROMPT, buildTriageUserMessage } from "./prompt.js";
-import { TriageResultSchema, type TriageRequest, type TriageResult } from "./types.js";
+import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, formatRecallResult, toPriorIncidents } from "./recall.js";
+import { TriageResultSchema, type ProgressFn, type TriageRequest, type TriageResult } from "./types.js";
+
+export type { ProgressFn } from "./types.js";
+
+/** Incident-memory recall as a native Claude tool (mirrors the Gemini path). */
+const RECALL_TOOL: Anthropic.Tool = {
+  name: RECALL_TOOL_NAME,
+  description: RECALL_TOOL_DESCRIPTION,
+  input_schema: {
+    type: "object",
+    additionalProperties: false,
+    properties: { query: { type: "string", description: "The symptom to match, e.g. 'checkout returning 500s'." } },
+    required: ["query"],
+  },
+};
 
 /** JSON schema for the finalizer tool — the model calls this exactly once. */
 const SUBMIT_TOOL: Anthropic.Tool = {
@@ -57,13 +74,10 @@ const SUBMIT_TOOL: Anthropic.Tool = {
   },
 };
 
-/** Optional progress callback so the Slack handler can stream status updates. */
-export type ProgressFn = (note: string) => void | Promise<void>;
-
 /**
- * Runs the agentic triage loop on Claude: it gathers evidence via the GitHub
- * MCP tools, then calls `submit_triage` with its verdict. Returns the validated
- * result. The caller owns the bridge lifecycle (connect/close).
+ * Runs the agentic triage loop on Claude: it recalls past incidents, gathers
+ * evidence via the GitHub MCP tools, then calls `submit_triage` with its
+ * verdict. Returns the validated result. The caller owns the bridge lifecycle.
  */
 export async function runTriageClaude(
   config: AppConfig,
@@ -75,8 +89,11 @@ export async function runTriageClaude(
   const repo = req.repo ?? config.GITHUB_DEFAULT_REPO;
   if (!repo) throw new Error("No repository specified and GITHUB_DEFAULT_REPO is not set.");
 
+  const memory = new IncidentMemory(config);
+  const collectedHits: RecallHit[] = [];
+
   // MCP tool schemas carry `type: "object"` at runtime; cast to the SDK type.
-  const tools = [...bridge.getTools(), SUBMIT_TOOL] as Anthropic.Tool[];
+  const tools = [...bridge.getTools(), RECALL_TOOL, SUBMIT_TOOL] as Anthropic.Tool[];
   const messages: Anthropic.MessageParam[] = [
     { role: "user", content: buildTriageUserMessage(req, repo) },
   ];
@@ -117,14 +134,22 @@ export async function runTriageClaude(
 
     const submit = toolUses.find((t) => t.name === "submit_triage");
     if (submit) {
-      return TriageResultSchema.parse(submit.input);
+      return TriageResultSchema.parse({ ...(submit.input as object), priorIncidents: toPriorIncidents(collectedHits) });
     }
 
-    // Otherwise these are GitHub MCP calls — execute them all and feed back.
+    // Otherwise these are recall / GitHub MCP calls — execute them all and feed back.
     const toolResults: Anthropic.ToolResultBlockParam[] = [];
     for (const call of toolUses) {
+      const input = (call.input as Record<string, unknown>) ?? {};
+      if (call.name === RECALL_TOOL_NAME) {
+        await onProgress?.("Recalling past incidents");
+        const hits = await memory.recall(String(input.query ?? ""));
+        collectedHits.push(...hits);
+        toolResults.push({ type: "tool_result", tool_use_id: call.id, content: truncate(formatRecallResult(hits), 8000) });
+        continue;
+      }
       await onProgress?.(`Checking GitHub: ${call.name}`);
-      const { text, isError } = await bridge.callTool(call.name, (call.input as Record<string, unknown>) ?? {});
+      const { text, isError } = await bridge.callTool(call.name, input);
       toolResults.push({
         type: "tool_result",
         tool_use_id: call.id,

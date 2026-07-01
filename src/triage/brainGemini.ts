@@ -13,7 +13,8 @@ import {
 } from "../github/evidence.js";
 import { IncidentMemory } from "../memory/store.js";
 import type { RecallHit } from "../memory/types.js";
-import type { ProgressFn } from "./brainClaude.js";
+import type { ProgressFn } from "./types.js";
+import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, formatRecallResult, toPriorIncidents } from "./recall.js";
 
 /** Read-only GitHub evidence tools, with Gemini-friendly schemas. */
 const EVIDENCE_TOOLS: FunctionDeclaration[] = [
@@ -75,9 +76,8 @@ const EVIDENCE_TOOLS: FunctionDeclaration[] = [
     },
   },
   {
-    name: "recall_incident_memory",
-    description:
-      "Search the org's past resolved incidents for ones similar to this report (returns symptom, root cause, what actually fixed it, who fixed it, and a similarity score). ALWAYS call this first — if this incident resembles a past one, that is your strongest lead.",
+    name: RECALL_TOOL_NAME,
+    description: RECALL_TOOL_DESCRIPTION,
     parameters: {
       type: Type.OBJECT,
       properties: { query: { type: Type.STRING, description: "The symptom to match, e.g. 'checkout returning 500s'." } },
@@ -103,7 +103,7 @@ const SUBMIT_TOOL: FunctionDeclaration = {
         items: {
           type: Type.OBJECT,
           properties: {
-            kind: { type: Type.STRING, enum: ["commit", "pull_request", "issue", "file", "other"] },
+            kind: { type: Type.STRING, enum: ["commit", "pull_request", "issue", "file", "past_incident", "other"] },
             title: { type: Type.STRING },
             url: { type: Type.STRING, nullable: true },
             why: { type: Type.STRING },
@@ -157,45 +157,15 @@ async function runEvidenceTool(
     if (name === "search_code") {
       return JSON.stringify(await searchCode(config, repo, String(args.query)));
     }
-    if (name === "recall_incident_memory") {
+    if (name === RECALL_TOOL_NAME) {
       const hits = await memory.recall(String(args.query ?? ""));
       collectedHits.push(...hits);
-      return JSON.stringify(
-        hits.map((h) => ({
-          id: h.record.id,
-          symptom: h.record.symptom,
-          rootCause: h.record.rootCause,
-          resolution: h.record.resolution,
-          resolvedBy: h.record.resolvedBy,
-          similarity: Number(h.score.toFixed(3)),
-          matchedBy: h.method,
-          links: h.record.links,
-        })),
-      );
+      return formatRecallResult(hits);
     }
     return `Unknown tool: ${name}`;
   } catch (err) {
     return `Tool "${name}" failed: ${err instanceof Error ? err.message : String(err)}`;
   }
-}
-
-/** Build the reliable priorIncidents panel from whatever recall surfaced. */
-function toPriorIncidents(hits: RecallHit[]): TriageResult["priorIncidents"] {
-  const byId = new Map<string, RecallHit>();
-  for (const h of hits) {
-    const existing = byId.get(h.record.id);
-    if (!existing || h.score > existing.score) byId.set(h.record.id, h);
-  }
-  return [...byId.values()]
-    .sort((a, b) => b.score - a.score)
-    .map((h) => ({
-      id: h.record.id,
-      symptom: h.record.symptom,
-      resolution: h.record.resolution,
-      resolvedBy: h.record.resolvedBy,
-      similarity: Number(h.score.toFixed(3)),
-      url: h.record.links[0] ?? null,
-    }));
 }
 
 /** Coerce Gemini's args into a valid TriageResult (fill optional fields). */
@@ -262,7 +232,7 @@ export async function runTriageGemini(
 
     const responseParts: Part[] = [];
     for (const call of calls) {
-      await onProgress?.(call.name === "recall_incident_memory" ? "Recalling past incidents" : `Checking GitHub: ${call.name}`);
+      await onProgress?.(call.name === RECALL_TOOL_NAME ? "Recalling past incidents" : `Checking GitHub: ${call.name}`);
       const text = await runEvidenceTool(
         config,
         repo,

@@ -17,6 +17,33 @@ const SEVERITY: Record<TriageResult["severity"], string> = {
   unknown: "⚪ unclear",
 };
 
+/**
+ * Neutralise untrusted text before embedding it in canvas markdown. Reports,
+ * evidence and recalled memory are user/model-controlled — without this a
+ * reporter could inject fake links, headings, or a bogus "✅ Resolved" section
+ * into a bot-authored, channel-shared doc (content spoofing / phishing).
+ */
+export function mdSafe(text: string): string {
+  // Collapse newlines first so untrusted text can never start a line (which
+  // neutralises heading/list/blockquote markers), then escape the inline-active
+  // characters that could still inject a link, code span, emphasis, or table.
+  return text
+    .replace(/[\r\n]+/g, " ")
+    .replace(/([`[\]<>|*])/g, "\\$1")
+    .trim();
+}
+
+/** Return the URL only if it's a well-formed http(s) link, else null. */
+export function safeHttpUrl(url: string | null | undefined): string | null {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.protocol === "http:" || u.protocol === "https:" ? url : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Markdown for a fresh incident canvas, built from the verdict. Pure. */
 export function buildIncidentCanvasMarkdown(
   result: TriageResult,
@@ -25,23 +52,23 @@ export function buildIncidentCanvasMarkdown(
   reportedBy?: string,
 ): string {
   const lines: string[] = [];
-  lines.push(`# 🔍 Incident: ${result.summary}`);
+  lines.push(`# 🔍 Incident: ${mdSafe(result.summary)}`);
   lines.push("");
   lines.push(`**Status:** 🟠 Investigating`);
   lines.push(`**Severity:** ${SEVERITY[result.severity]}`);
-  lines.push(`**Repository:** ${repo}`);
-  lines.push(`**Reported:** ${report}${reportedBy ? ` (by ${reportedBy})` : ""}`);
+  lines.push(`**Repository:** ${mdSafe(repo)}`);
+  lines.push(`**Reported:** ${mdSafe(report)}${reportedBy ? ` (by ${mdSafe(reportedBy)})` : ""}`);
   lines.push("");
   lines.push(`## Likely cause (hypothesis · ${Math.round(result.confidence)}% confidence)`);
-  lines.push(result.rootCauseHypothesis);
+  lines.push(mdSafe(result.rootCauseHypothesis));
 
   if (result.priorIncidents.length > 0) {
     lines.push("");
     lines.push("## 🧠 We've seen this before");
     for (const p of result.priorIncidents.slice(0, 3)) {
-      const who = p.resolvedBy ? ` — fixed by ${p.resolvedBy}` : "";
+      const who = p.resolvedBy ? ` — fixed by ${mdSafe(p.resolvedBy)}` : "";
       const pct = `${Math.round(p.similarity * 100)}%`;
-      lines.push(`- **${pct} match** ${p.symptom}${who}${p.resolution ? `\n  _Last time:_ ${p.resolution}` : ""}`);
+      lines.push(`- **${pct} match** ${mdSafe(p.symptom)}${who}${p.resolution ? `\n  _Last time:_ ${mdSafe(p.resolution)}` : ""}`);
     }
   }
 
@@ -49,19 +76,20 @@ export function buildIncidentCanvasMarkdown(
     lines.push("");
     lines.push("## Evidence");
     for (const e of result.evidence.slice(0, 8)) {
-      const title = e.url ? `[${e.title}](${e.url})` : e.title;
-      lines.push(`- \`${e.kind}\` ${title} — ${e.why}`);
+      const url = safeHttpUrl(e.url);
+      const title = url ? `[${mdSafe(e.title)}](${url})` : mdSafe(e.title);
+      lines.push(`- \`${mdSafe(e.kind)}\` ${title} — ${mdSafe(e.why)}`);
     }
   }
 
   lines.push("");
   lines.push(`## Suspected owner`);
-  lines.push(result.suspectedOwner ? `@${result.suspectedOwner}` : "_not determined_");
+  lines.push(result.suspectedOwner ? `@${mdSafe(result.suspectedOwner)}` : "_not determined_");
 
   if (result.recommendedActions.length > 0) {
     lines.push("");
     lines.push("## Recommended next steps");
-    for (const a of result.recommendedActions) lines.push(`- [ ] ${a}`);
+    for (const a of result.recommendedActions) lines.push(`- [ ] ${mdSafe(a)}`);
   }
 
   lines.push("");
@@ -81,8 +109,8 @@ export function buildResolutionCanvasMarkdown(record: IncidentRecord): string {
   const lines: string[] = [
     "",
     "## ✅ Resolved",
-    `**What fixed it:** ${record.resolution || "(not recorded)"}`,
-    `**Fixed by:** ${record.resolvedBy ?? "unknown"}`,
+    `**What fixed it:** ${record.resolution ? mdSafe(record.resolution) : "(not recorded)"}`,
+    `**Fixed by:** ${record.resolvedBy ? mdSafe(record.resolvedBy) : "unknown"}`,
     `**Outcome:** ${verdict}`,
     "_Recorded to Culprit's memory — it will recall this next time._",
   ];

@@ -97,13 +97,15 @@ export function buildResolveModal(ctx: ResolveContext): View {
 export function parseResolveSubmission(
   values: Record<string, Record<string, { value?: string | null; selected_option?: { value?: string } | null }>>,
 ): ResolveFields {
-  const resolution = values.fix?.value?.value?.trim() ?? "";
+  // Cap lengths — this text is embedded, stored, recalled, and re-shown, so it
+  // shouldn't be able to carry an oversized/poisoned payload into memory.
+  const resolution = (values.fix?.value?.value?.trim() ?? "").slice(0, 1000);
   const correctness = values.hyp?.value?.selected_option?.value;
-  const who = values.who?.value?.value?.trim();
+  const who = (values.who?.value?.value?.trim() ?? "").slice(0, 80);
   return {
     resolution,
     hypothesisWasCorrect: toCorrectness(correctness),
-    resolvedBy: who && who.length > 0 ? who : null,
+    resolvedBy: who.length > 0 ? who : null,
   };
 }
 

@@ -11,8 +11,9 @@ const EnvSchema = z
     SLACK_BOT_TOKEN: z.string().min(1, "SLACK_BOT_TOKEN is required (xoxb-...)"),
     SLACK_APP_TOKEN: z.string().min(1, "SLACK_APP_TOKEN is required (xapp-...) for Socket Mode"),
 
-    // Which LLM drives the triage brain.
-    LLM_PROVIDER: z.enum(["anthropic", "gemini"]).default("anthropic"),
+    // Which LLM drives the triage brain. Defaults to the free-tier Gemini path,
+    // which is the fully-wired, proven configuration (memory recall + evidence).
+    LLM_PROVIDER: z.enum(["anthropic", "gemini"]).default("gemini"),
 
     // Anthropic (used when LLM_PROVIDER=anthropic) — gathers evidence over the GitHub MCP server.
     ANTHROPIC_API_KEY: z.string().optional(),
@@ -33,15 +34,23 @@ const EnvSchema = z
       .transform((v) => v === "true"),
     MEMORY_RECALL_K: z.coerce.number().int().positive().max(10).default(3),
     // Tuned for gemini-embedding-001, whose cosine floor for unrelated text is
-    // ~0.55. 0.70 keeps recall precise — a wrong "we've seen this" is worse than
-    // none. Lower it if you switch to a model with wider score separation.
+    // ~0.55. 0.70 keeps embedding recall precise — a wrong "we've seen this" is
+    // worse than none. Lower it if you switch to a model with wider separation.
     MEMORY_MIN_SCORE: z.coerce.number().min(0).max(1).default(0.7),
+    // Separate, much lower floor for the lexical (Jaccard) fallback — its scores
+    // for genuinely-related incidents sit far below the embedding floor, so
+    // reusing MEMORY_MIN_SCORE here would silently disable offline recall.
+    MEMORY_MIN_SCORE_LEXICAL: z.coerce.number().min(0).max(1).default(0.12),
 
     GITHUB_TOKEN: z.string().min(1, "GITHUB_TOKEN is required to read repo context"),
     GITHUB_DEFAULT_REPO: z
       .string()
       .regex(/^[^/\s]+\/[^/\s]+$/, "GITHUB_DEFAULT_REPO must look like owner/repo")
       .optional(),
+    // Comma-separated extra owner/repo values Culprit may FILE ISSUES into, beyond
+    // GITHUB_DEFAULT_REPO. Prevents a reporter from directing the bot's token at an
+    // arbitrary repo. Empty + no default repo = unrestricted (single-user/dev only).
+    GITHUB_ALLOWED_REPOS: z.string().optional(),
 
     GITHUB_MCP_MODE: z.enum(["remote", "local"]).default("remote"),
     GITHUB_MCP_URL: z.string().url().default("https://api.githubcopilot.com/mcp/"),
@@ -61,6 +70,22 @@ const EnvSchema = z
 export type AppConfig = z.infer<typeof EnvSchema>;
 
 let cached: AppConfig | null = null;
+
+/**
+ * Whether Culprit may file an issue into `repo`. Restricts the bot's write token
+ * to GITHUB_DEFAULT_REPO + GITHUB_ALLOWED_REPOS so a reporter can't point it at
+ * an arbitrary repository. If no allowlist is configured at all, permits it
+ * (single-user/dev convenience — set a default repo in shared workspaces).
+ */
+export function isIssueRepoAllowed(config: AppConfig, repo: string): boolean {
+  const allowed = new Set<string>();
+  if (config.GITHUB_DEFAULT_REPO) allowed.add(config.GITHUB_DEFAULT_REPO.toLowerCase());
+  for (const r of (config.GITHUB_ALLOWED_REPOS ?? "").split(",")) {
+    const trimmed = r.trim().toLowerCase();
+    if (trimmed) allowed.add(trimmed);
+  }
+  return allowed.size === 0 || allowed.has(repo.toLowerCase());
+}
 
 /** Parse and cache the environment. Throws a readable error if invalid. */
 export function loadConfig(): AppConfig {

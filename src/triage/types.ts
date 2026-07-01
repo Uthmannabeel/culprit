@@ -65,3 +65,6 @@ export interface TriageRequest {
   /** Who reported it (Slack display name), for context only. */
   reportedBy?: string;
 }
+
+/** Optional progress callback so the Slack handler can stream status updates. */
+export type ProgressFn = (note: string) => void | Promise<void>;

@@ -1,6 +1,7 @@
 import type { KnownBlock } from "@slack/types";
 import type { TriageResult } from "../triage/types.js";
 import { ACTION_MARK_RESOLVED, type ResolveContext } from "./resolve.js";
+import { safeHttpUrl } from "./canvas.js";
 
 /** Action IDs for interactive components. */
 export const ACTION_CREATE_ISSUE = "triage_create_issue";
@@ -62,7 +63,8 @@ export function renderTriageBlocks(
     });
     for (const p of result.priorIncidents.slice(0, 3)) {
       const who = p.resolvedBy ? ` — fixed by *${escape(p.resolvedBy)}*` : "";
-      const link = p.url ? ` <${p.url}|details>` : "";
+      const safeUrl = safeHttpUrl(p.url);
+      const link = safeUrl ? ` <${safeUrl}|details>` : "";
       const match = `${Math.round(p.similarity * 100)}% match`;
       const fix = p.resolution ? `\n   _Last time:_ ${escape(p.resolution)}` : "";
       blocks.push({
@@ -76,7 +78,8 @@ export function renderTriageBlocks(
     blocks.push({ type: "divider" });
     blocks.push({ type: "section", text: { type: "mrkdwn", text: "*Evidence*" } });
     for (const e of result.evidence.slice(0, 8)) {
-      const link = e.url ? `<${e.url}|${escape(e.title)}>` : escape(e.title);
+      const safeUrl = safeHttpUrl(e.url);
+      const link = safeUrl ? `<${safeUrl}|${escape(e.title)}>` : escape(e.title);
       blocks.push({
         type: "section",
         text: { type: "mrkdwn", text: `• \`${e.kind}\` ${link}\n   ${escape(e.why)}` },

@@ -49,10 +49,16 @@ export class IncidentMemory {
     if (this.records.length === 0) return [];
 
     const hits = (await this.tryEmbeddingRecall(query)) ?? this.lexicalRecall(query);
+    // Thresholds are method-specific: embedding cosine and lexical Jaccard have
+    // very different score distributions (see config comments).
     return hits
-      .filter((h) => h.score >= this.config.MEMORY_MIN_SCORE)
+      .filter((h) => h.score >= this.minScoreFor(h.method))
       .sort((a, b) => b.score - a.score)
       .slice(0, k);
+  }
+
+  private minScoreFor(method: RecallHit["method"]): number {
+    return method === "lexical" ? this.config.MEMORY_MIN_SCORE_LEXICAL : this.config.MEMORY_MIN_SCORE;
   }
 
   /** Embedding-based ranking; returns null if embeddings are unavailable. */

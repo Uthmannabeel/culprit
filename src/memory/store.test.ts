@@ -24,13 +24,15 @@ const SEED: Array<Partial<IncidentRecord>> = [
 let dir: string;
 let dbPath: string;
 
-function makeConfig(): AppConfig {
+function makeConfig(over: Partial<AppConfig> = {}): AppConfig {
   return {
     INCIDENTS_DB_PATH: dbPath,
     MEMORY_RECALL_K: 3,
     MEMORY_MIN_SCORE: 0.05,
-    EMBEDDING_MODEL: "text-embedding-004",
+    MEMORY_MIN_SCORE_LEXICAL: 0.05,
+    EMBEDDING_MODEL: "gemini-embedding-001",
     GEMINI_API_KEY: "unused",
+    ...over,
   } as AppConfig;
 }
 
@@ -55,10 +57,18 @@ describe("IncidentMemory.recall (lexical fallback)", () => {
   });
 
   test("returns nothing when below the min score", async () => {
-    const cfg = { ...makeConfig(), MEMORY_MIN_SCORE: 0.9 } as AppConfig;
-    const memory = new IncidentMemory(cfg);
+    const memory = new IncidentMemory(makeConfig({ MEMORY_MIN_SCORE_LEXICAL: 0.9 }));
     const hits = await memory.recall("the homepage banner colour looks off");
     expect(hits).toEqual([]);
+  });
+
+  test("lexical fallback still recalls at the embedding-tuned default threshold (H2 regression)", async () => {
+    // Embedding floor is high (0.7) but the offline fallback must not be gated by
+    // it — a related report should still surface via the lexical threshold.
+    const memory = new IncidentMemory(makeConfig({ MEMORY_MIN_SCORE: 0.7, MEMORY_MIN_SCORE_LEXICAL: 0.1 }));
+    const hits = await memory.recall("checkout returning 500 errors after a deploy");
+    expect(hits[0]?.record.id).toBe("a");
+    expect(hits[0]?.method).toBe("lexical");
   });
 
   test("empty memory recalls nothing", async () => {

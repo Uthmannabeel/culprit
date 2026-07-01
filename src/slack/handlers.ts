@@ -1,5 +1,5 @@
 import type { App } from "@slack/bolt";
-import type { AppConfig } from "../config.js";
+import { isIssueRepoAllowed, type AppConfig } from "../config.js";
 import { runTriage } from "../triage/brain.js";
 import { createGithubIssue, type DraftIssue } from "../github/issues.js";
 import { ACTION_CREATE_ISSUE, renderTriageBlocks } from "./blocks.js";
@@ -31,6 +31,22 @@ function parseRepo(text: string, fallback?: string): string | undefined {
 /** Strip leading bot mentions like "<@U123>" from the report text. */
 function stripMentions(text: string): string {
   return text.replace(/<@[^>]+>/g, "").trim();
+}
+
+/** Parse a JSON interaction payload defensively — never throw on bad input. */
+function safeJsonParse<T>(text: string | undefined): T | null {
+  if (!text) return null;
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    return null;
+  }
+}
+
+/** Log server-side detail; users get a generic message (no internal leakage). */
+function logError(context: string, err: unknown): void {
+  // eslint-disable-next-line no-console
+  console.error(`[${context}]`, err instanceof Error ? err.message : err);
 }
 
 /**
@@ -90,8 +106,8 @@ export function registerHandlers(app: App, config: AppConfig): void {
         await client.chat.postMessage({ channel, thread_ts: threadTs, text: result.summary, blocks });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
-      const text = `⚠️ I couldn't complete triage: ${message}`;
+      logError("triage", err);
+      const text = "⚠️ I couldn't complete triage on that one. Try again, or check the repo/token setup.";
       if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text });
       else await client.chat.postMessage({ channel, thread_ts: threadTs, text });
     }
@@ -125,9 +141,23 @@ export function registerHandlers(app: App, config: AppConfig): void {
   // Button: file the drafted issue on GitHub.
   app.action(ACTION_CREATE_ISSUE, async ({ ack, body, client, action }) => {
     await ack();
-    const payload = JSON.parse((action as { value: string }).value) as { repo: string; issue: DraftIssue };
     const channel = (body as { channel?: { id: string } }).channel?.id;
     const threadTs = (body as { message?: { ts: string } }).message?.ts;
+    const payload = safeJsonParse<{ repo: string; issue: DraftIssue }>((action as { value?: string }).value);
+    if (!payload?.repo || !payload.issue) return;
+
+    // Confused-deputy guard: only file into repos the operator allowlisted, so a
+    // reporter can't aim the bot's token at an arbitrary repository.
+    if (!isIssueRepoAllowed(config, payload.repo)) {
+      if (channel) {
+        await client.chat.postMessage({
+          channel,
+          thread_ts: threadTs,
+          text: `⚠️ I'm not allowed to file issues in \`${payload.repo}\`. Add it to GITHUB_ALLOWED_REPOS to permit it.`,
+        });
+      }
+      return;
+    }
 
     try {
       const created = await createGithubIssue(config, payload.repo, payload.issue);
@@ -139,9 +169,9 @@ export function registerHandlers(app: App, config: AppConfig): void {
         });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      logError("create-issue", err);
       if (channel) {
-        await client.chat.postMessage({ channel, thread_ts: threadTs, text: `⚠️ Couldn't create the issue: ${message}` });
+        await client.chat.postMessage({ channel, thread_ts: threadTs, text: "⚠️ I couldn't create the issue (check the token's repo/issues access)." });
       }
     }
   });
@@ -149,7 +179,8 @@ export function registerHandlers(app: App, config: AppConfig): void {
   // Button: open the "what fixed it?" modal so Culprit can learn from the outcome.
   app.action(ACTION_MARK_RESOLVED, async ({ ack, body, client, action }) => {
     await ack();
-    const ctx = JSON.parse((action as { value: string }).value) as ResolveContext;
+    const ctx = safeJsonParse<ResolveContext>((action as { value?: string }).value);
+    if (!ctx) return;
     ctx.channel = (body as { channel?: { id: string } }).channel?.id ?? null;
     ctx.threadTs = (body as { message?: { ts: string } }).message?.ts ?? null;
     const triggerId = (body as { trigger_id?: string }).trigger_id;
@@ -159,7 +190,8 @@ export function registerHandlers(app: App, config: AppConfig): void {
   // Modal submit: write the resolved incident into memory — the learning loop.
   app.view(VIEW_MARK_RESOLVED, async ({ ack, view, client }) => {
     await ack();
-    const ctx = JSON.parse(view.private_metadata || "{}") as ResolveContext;
+    const ctx = safeJsonParse<ResolveContext>(view.private_metadata);
+    if (!ctx) return;
     const fields = parseResolveSubmission(view.state.values as never);
     const id = `inc-${ctx.threadTs ?? Date.now()}`;
     const record = buildResolvedIncident(ctx, fields, id, new Date().toISOString());
@@ -179,9 +211,9 @@ export function registerHandlers(app: App, config: AppConfig): void {
         });
       }
     } catch (err) {
-      const message = err instanceof Error ? err.message : String(err);
+      logError("resolve-remember", err);
       if (ctx.channel) {
-        await client.chat.postMessage({ channel: ctx.channel, thread_ts: ctx.threadTs ?? undefined, text: `⚠️ Couldn't save to memory: ${message}` });
+        await client.chat.postMessage({ channel: ctx.channel, thread_ts: ctx.threadTs ?? undefined, text: "⚠️ I couldn't save that to memory just now." });
       }
     }
   });
