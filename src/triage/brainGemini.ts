@@ -230,19 +230,22 @@ export async function runTriageGemini(
       return normalizeVerdict((submit.args as Record<string, unknown>) ?? {}, toPriorIncidents(collectedHits));
     }
 
-    const responseParts: Part[] = [];
-    for (const call of calls) {
-      await onProgress?.(call.name === RECALL_TOOL_NAME ? "Recalling past incidents" : `Checking GitHub: ${call.name}`);
-      const text = await runEvidenceTool(
-        config,
-        repo,
-        memory,
-        collectedHits,
-        call.name ?? "",
-        (call.args as Record<string, unknown>) ?? {},
-      );
-      responseParts.push({ functionResponse: { name: call.name ?? "", response: { result: text } } });
-    }
+    // The model often asks for several lookups at once — run them concurrently
+    // (Promise.all preserves order, so responses stay aligned with the calls).
+    const responseParts: Part[] = await Promise.all(
+      calls.map(async (call) => {
+        await onProgress?.(call.name === RECALL_TOOL_NAME ? "Recalling past incidents" : `Checking GitHub: ${call.name}`);
+        const text = await runEvidenceTool(
+          config,
+          repo,
+          memory,
+          collectedHits,
+          call.name ?? "",
+          (call.args as Record<string, unknown>) ?? {},
+        );
+        return { functionResponse: { name: call.name ?? "", response: { result: text } } };
+      }),
+    );
     contents.push({ role: "user", parts: responseParts });
   }
 

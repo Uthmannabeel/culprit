@@ -1,8 +1,9 @@
 import type { App } from "@slack/bolt";
 import { isIssueRepoAllowed, type AppConfig } from "../config.js";
 import { runTriage } from "../triage/brain.js";
-import { createGithubIssue, type DraftIssue } from "../github/issues.js";
+import { createGithubIssue } from "../github/issues.js";
 import { ACTION_CREATE_ISSUE, renderTriageBlocks } from "./blocks.js";
+import { decodeIssuePayload } from "./draftStore.js";
 import { IncidentMemory } from "../memory/store.js";
 import {
   ACTION_MARK_RESOLVED,
@@ -19,19 +20,7 @@ import {
   createIncidentCanvas,
 } from "./canvas.js";
 
-/** Pull an explicit repo out of the message text, else fall back to default. */
-function parseRepo(text: string, fallback?: string): string | undefined {
-  const explicit = text.match(/\brepo:([^/\s]+\/[^/\s]+)\b/i);
-  if (explicit) return explicit[1];
-  const url = text.match(/github\.com\/([^/\s]+\/[^/\s]+)/i);
-  if (url) return url[1];
-  return fallback;
-}
-
-/** Strip leading bot mentions like "<@U123>" from the report text. */
-function stripMentions(text: string): string {
-  return text.replace(/<@[^>]+>/g, "").trim();
-}
+import { parseRepo, stripMentions } from "./parse.js";
 
 /** Parse a JSON interaction payload defensively — never throw on bad input. */
 function safeJsonParse<T>(text: string | undefined): T | null {
@@ -50,6 +39,20 @@ function logError(context: string, err: unknown): void {
 }
 
 /**
+ * Resolve a Slack user ID to a human-readable name (best-effort). Without this
+ * the verdict card, canvas, and LLM prompt all show a raw "U0ABC…" id.
+ */
+async function displayName(client: App["client"], userId: string | undefined): Promise<string | undefined> {
+  if (!userId) return undefined;
+  try {
+    const res = await client.users.info({ user: userId });
+    return res.user?.profile?.display_name || res.user?.real_name || userId;
+  } catch {
+    return userId;
+  }
+}
+
+/**
  * Register all Slack listeners on the Bolt app: the @mention / DM triggers that
  * run a triage, and the button action that files the drafted issue.
  */
@@ -58,16 +61,26 @@ export function registerHandlers(app: App, config: AppConfig): void {
     text: string;
     channel: string;
     threadTs: string;
-    userName?: string;
+    userId?: string;
     client: App["client"];
   }) => {
-    const { text, channel, threadTs, userName, client } = args;
+    const { text, channel, threadTs, userId, client } = args;
     const report = stripMentions(text);
     if (!report) {
       await client.chat.postMessage({
         channel,
         thread_ts: threadTs,
         text: "Tell me what's broken and I'll investigate. Add `repo:owner/name` to target a specific repo.",
+      });
+      return;
+    }
+
+    const repo = parseRepo(report, config.GITHUB_DEFAULT_REPO);
+    if (!repo) {
+      await client.chat.postMessage({
+        channel,
+        thread_ts: threadTs,
+        text: "I need a repo to investigate. Add `repo:owner/name` to your message (or set GITHUB_DEFAULT_REPO).",
       });
       return;
     }
@@ -79,10 +92,10 @@ export function registerHandlers(app: App, config: AppConfig): void {
     });
 
     try {
-      const repo = parseRepo(report, config.GITHUB_DEFAULT_REPO);
+      const reporter = await displayName(client, userId);
       const result = await runTriage(
         config,
-        { report, repo, reportedBy: userName },
+        { report, repo, reportedBy: reporter },
         async (note) => {
           if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text: `🔍 ${note}…` });
         },
@@ -90,13 +103,13 @@ export function registerHandlers(app: App, config: AppConfig): void {
       const canvas = config.CANVAS_ENABLED
         ? await createIncidentCanvas(client, {
             title: `Incident: ${result.summary}`.slice(0, 120),
-            markdown: buildIncidentCanvasMarkdown(result, repo ?? "unknown", report, userName),
+            markdown: buildIncidentCanvasMarkdown(result, repo, report, reporter),
             channel,
           })
         : null;
       const blocks = renderTriageBlocks(
         result,
-        repo ?? "unknown",
+        repo,
         report,
         canvas ? { id: canvas.canvasId, url: canvas.url } : undefined,
       );
@@ -119,8 +132,20 @@ export function registerHandlers(app: App, config: AppConfig): void {
       text: event.text ?? "",
       channel: event.channel,
       threadTs: event.thread_ts ?? event.ts,
-      userName: event.user,
+      userId: event.user,
       client,
+    });
+  });
+
+  // Greet users who open Culprit's assistant panel — the manifest subscribes to
+  // this event; without a handler the panel just sits silent, which reads as broken.
+  app.event("assistant_thread_started", async ({ event, client }) => {
+    const thread = (event as { assistant_thread?: { channel_id?: string; thread_ts?: string } }).assistant_thread;
+    if (!thread?.channel_id || !thread.thread_ts) return;
+    await client.chat.postMessage({
+      channel: thread.channel_id,
+      thread_ts: thread.thread_ts,
+      text: "👋 Tell me what's broken — e.g. `checkout is throwing 500s repo:owner/name` — and I'll investigate: past incidents, recent changes, likely owner, and a draft issue.",
     });
   });
 
@@ -133,7 +158,7 @@ export function registerHandlers(app: App, config: AppConfig): void {
       text: m.text ?? "",
       channel: m.channel,
       threadTs: m.thread_ts ?? m.ts,
-      userName: m.user,
+      userId: m.user,
       client,
     });
   });
@@ -143,8 +168,19 @@ export function registerHandlers(app: App, config: AppConfig): void {
     await ack();
     const channel = (body as { channel?: { id: string } }).channel?.id;
     const threadTs = (body as { message?: { ts: string } }).message?.ts;
-    const payload = safeJsonParse<{ repo: string; issue: DraftIssue }>((action as { value?: string }).value);
-    if (!payload?.repo || !payload.issue) return;
+    const payload = decodeIssuePayload((action as { value?: string }).value);
+    if (!payload) {
+      // Oversized drafts are held in-process; a restart between the verdict and
+      // the click loses them. Tell the user how to recover instead of going silent.
+      if (channel) {
+        await client.chat.postMessage({
+          channel,
+          thread_ts: threadTs,
+          text: "⚠️ That draft has expired (I was restarted since posting it). Re-run the triage and click again.",
+        });
+      }
+      return;
+    }
 
     // Confused-deputy guard: only file into repos the operator allowlisted, so a
     // reporter can't aim the bot's token at an arbitrary repository.

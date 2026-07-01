@@ -2,6 +2,7 @@ import type { KnownBlock } from "@slack/types";
 import type { TriageResult } from "../triage/types.js";
 import { ACTION_MARK_RESOLVED, type ResolveContext } from "./resolve.js";
 import { safeHttpUrl } from "./canvas.js";
+import { encodeIssuePayload } from "./draftStore.js";
 
 /** Action IDs for interactive components. */
 export const ACTION_CREATE_ISSUE = "triage_create_issue";
@@ -134,7 +135,7 @@ export function renderTriageBlocks(
         style: "primary",
         text: { type: "plain_text", text: "📝 Create GitHub issue", emoji: true },
         action_id: ACTION_CREATE_ISSUE,
-        value: JSON.stringify({ repo, issue: result.draftIssue }),
+        value: encodeIssuePayload({ repo, issue: result.draftIssue }),
       },
       {
         type: "button",

@@ -70,6 +70,17 @@ describe("renderTriageBlocks", () => {
     expect(text).not.toContain("seen this before");
   });
 
+  test("keeps every button value under Slack's 2000-char limit even for huge drafts", () => {
+    const huge = renderTriageBlocks(
+      { ...sample, draftIssue: { ...sample.draftIssue, body: "detail ".repeat(1000) } },
+      "o/r",
+    );
+    const actions = huge.find((b) => b.type === "actions") as { elements: { value?: string }[] };
+    for (const el of actions.elements) {
+      expect((el.value ?? "").length).toBeLessThanOrEqual(2000);
+    }
+  });
+
   test("escapes angle brackets in untrusted text", () => {
     const evil = renderTriageBlocks({ ...sample, summary: "<script>alert(1)</script>" }, "o/r");
     const section = evil[1] as { text: { text: string } };

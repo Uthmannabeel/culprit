@@ -137,26 +137,22 @@ export async function runTriageClaude(
       return TriageResultSchema.parse({ ...(submit.input as object), priorIncidents: toPriorIncidents(collectedHits) });
     }
 
-    // Otherwise these are recall / GitHub MCP calls — execute them all and feed back.
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
-    for (const call of toolUses) {
-      const input = (call.input as Record<string, unknown>) ?? {};
-      if (call.name === RECALL_TOOL_NAME) {
-        await onProgress?.("Recalling past incidents");
-        const hits = await memory.recall(String(input.query ?? ""));
-        collectedHits.push(...hits);
-        toolResults.push({ type: "tool_result", tool_use_id: call.id, content: truncate(formatRecallResult(hits), 8000) });
-        continue;
-      }
-      await onProgress?.(`Checking GitHub: ${call.name}`);
-      const { text, isError } = await bridge.callTool(call.name, input);
-      toolResults.push({
-        type: "tool_result",
-        tool_use_id: call.id,
-        content: truncate(text, 8000),
-        is_error: isError,
-      });
-    }
+    // Otherwise these are recall / GitHub MCP calls — run the round concurrently
+    // (Promise.all preserves order, so results stay aligned with tool_use ids).
+    const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
+      toolUses.map(async (call): Promise<Anthropic.ToolResultBlockParam> => {
+        const input = (call.input as Record<string, unknown>) ?? {};
+        if (call.name === RECALL_TOOL_NAME) {
+          await onProgress?.("Recalling past incidents");
+          const hits = await memory.recall(String(input.query ?? ""));
+          collectedHits.push(...hits);
+          return { type: "tool_result", tool_use_id: call.id, content: truncate(formatRecallResult(hits), 8000) };
+        }
+        await onProgress?.(`Checking GitHub: ${call.name}`);
+        const { text, isError } = await bridge.callTool(call.name, input);
+        return { type: "tool_result", tool_use_id: call.id, content: truncate(text, 8000), is_error: isError };
+      }),
+    );
     messages.push({ role: "user", content: toolResults });
   }
 
