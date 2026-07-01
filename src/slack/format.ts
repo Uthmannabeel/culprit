@@ -49,6 +49,27 @@ export function mdSafe(text: string): string {
     .trim();
 }
 
+/** Escape Slack mrkdwn control characters in untrusted text. */
+export function escapeMrkdwn(text: string): string {
+  return text.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+}
+
+/**
+ * Sanitise text used as the LABEL of a `<url|label>` mrkdwn link — a `|` in
+ * the label would terminate the link early and corrupt the line.
+ */
+export function linkLabel(text: string): string {
+  return escapeMrkdwn(text.replace(/\|/g, "/"));
+}
+
+/**
+ * Slack hard-caps a section block's text at 3000 characters; one oversized
+ * section rejects the ENTIRE message (`invalid_blocks`). Clamp with headroom.
+ */
+export function clampSectionText(text: string, max = 2900): string {
+  return text.length <= max ? text : `${text.slice(0, max)}…`;
+}
+
 /** Return the URL only if it's a well-formed http(s) link, else null. */
 export function safeHttpUrl(url: string | null | undefined): string | null {
   if (!url) return null;

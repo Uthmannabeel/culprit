@@ -60,13 +60,14 @@ Track: **New Slack Agent / Slack Agent for Organizations**.
   Slack (Socket Mode, Bolt)         ← outbound WebSocket, no public URL
         │
         ▼
-  Triage brain (Claude, agentic tool-use loop)
-        │  gathers evidence ──▶ GitHub MCP server  (commits / PRs / issues / files)
-        │  ◀── evidence
+  Triage brain (Gemini or Claude, bounded agentic loop)
+        │  1. recall ──▶ Incident memory   ("we've solved this before" + the fix)
+        │  2. evidence ─▶ GitHub (MCP or REST: merged PRs / commits / issues / code)
         ▼
-  Structured verdict  → Block Kit card in-thread
+  Verdict card in-thread  +  living incident Canvas
         │
-        └── [📝 Create GitHub issue] → GitHub REST → files the drafted issue
+        ├── [Create GitHub issue] → GitHub REST (allowlisted) → files the draft
+        └── [Log resolution] → what actually fixed it → written back to memory
 ```
 
 The brain runs a bounded agentic loop: Claude decides which GitHub MCP tools to

@@ -29,9 +29,10 @@ with `LLM_PROVIDER` (`gemini` for the free-tier path, `anthropic` for Claude+MCP
 Type in the channel:
 > `@Culprit checkout is throwing 500s since this morning repo:acme/store`
 
-Culprit replies **🔍 Investigating…** and the status updates live
-(*"Checking GitHub: list_recent_pull_requests"*) — point out it's **gathering real,
-multi-signal evidence** (merged PRs, commits, issues, code), not guessing.
+Culprit replies **Investigating…** and the status line narrates the investigation live
+(*"Checking past incidents for a match…"*, *"Reviewing recently merged pull requests…"*) —
+point out it's **gathering real, multi-signal evidence** (memory, merged PRs, commits,
+issues, code), not guessing.
 
 ### 0:45 — The verdict (45s)
 The card lands. Walk through it:

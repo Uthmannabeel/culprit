@@ -5,65 +5,90 @@ flowchart TD
     user["👤 Teammate in Slack<br/>'@Culprit checkout is 500ing repo:acme/store'"]
 
     subgraph slack["Slack"]
-      mention["app_mention / DM event"]
-      card["Block Kit verdict card<br/>+ 'Create GitHub issue' button"]
+      mention["app_mention / DM /<br/>assistant panel"]
+      card["Verdict card (Block Kit)<br/>prior incident · cause · evidence · owner"]
+      canvas["Living incident canvas<br/>(auto-created, resolution appended)"]
+      modal["'Log resolution' modal"]
     end
 
     subgraph culprit["Culprit agent (Node / TypeScript, Socket Mode)"]
-      handlers["Slack handlers<br/>(parse report + repo)"]
-      brain["Triage brain<br/>(Claude agentic tool-use loop)"]
+      handlers["Slack handlers<br/>(parse report + repo, in-flight guard)"]
+      brain["Triage brain — pluggable<br/>(bounded agentic tool-use loop)"]
+      memory[("Incident memory<br/>embeddings + recall / remember")]
       bridge["GitHub MCP client bridge"]
-      issuer["GitHub REST issue writer"]
+      evidence["GitHub REST evidence<br/>(commits · PRs · issues · code search)"]
+      issuer["GitHub REST issue writer<br/>(repo allowlist)"]
     end
 
     subgraph external["External services"]
-      claude["Claude<br/>claude-opus-4-8<br/>adaptive thinking"]
-      ghmcp["GitHub MCP server<br/>(commits / PRs / issues / files)"]
-      ghrest["GitHub REST API<br/>(create issue)"]
+      llm["Gemini 2.5 Flash (free tier)<br/>or Claude Opus 4.8"]
+      ghmcp["GitHub MCP server"]
+      ghrest["GitHub REST API"]
     end
 
-    user -->|"@mention / DM"| mention --> handlers --> brain
-    brain <-->|"messages + tool calls"| claude
-    brain -->|"tool calls (read-only)"| bridge <-->|"MCP"| ghmcp
-    brain -->|"structured verdict"| card --> user
-    card -->|"button click"| issuer -->|"POST /issues"| ghrest
-    ghrest -->|"issue URL"| card
+    user --> mention --> handlers --> brain
+    brain <-->|"messages + tool calls"| llm
+    brain -->|"1️⃣ recall_incident_memory"| memory
+    brain -->|"2️⃣ read-only evidence"| bridge <-->|"MCP"| ghmcp
+    brain -->|"2️⃣ read-only evidence"| evidence --> ghrest
+    brain -->|"validated verdict + prior incidents"| card --> user
+    handlers --> canvas
+    card -->|"Create GitHub issue (human click)"| issuer --> ghrest
+    card -->|"Log resolution (human click)"| modal -->|"what actually fixed it"| memory
+    modal -->|"Resolution section"| canvas
 
-    %% Culprit also EXPOSES its own MCP server
-    extagent["🤖 Any external agent"] -->|"MCP: triage_incident"| mcpserver["Culprit MCP server"]
+    %% Culprit also SERVES its own MCP tool
+    extagent["🤖 Any external agent"] -->|"MCP: triage_incident"| mcpserver["Culprit MCP server (stdio)"]
     mcpserver --> brain
 ```
 
-## The agentic loop (how a verdict is formed)
+## The compounding loop (what makes Culprit different)
 
 ```mermaid
 sequenceDiagram
-    participant U as User (Slack)
+    participant U as Reporter (Slack)
     participant B as Triage brain
-    participant C as Claude
-    participant G as GitHub MCP
+    participant M as Incident memory
+    participant G as GitHub (MCP / REST)
+    participant R as Responder
 
-    U->>B: incident report + repo
-    loop until submit_triage (bounded by TRIAGE_MAX_STEPS)
-        B->>C: messages + tools (GitHub MCP + submit_triage)
-        C-->>B: tool_use: search commits / list PRs / read file
-        B->>G: execute MCP tool call
-        G-->>B: real evidence
-        B->>C: tool_result
+    U->>B: "checkout is throwing 500s"
+    B->>M: recall_incident_memory(symptom)
+    M-->>B: similar past incident + what fixed it + who
+    loop bounded agentic loop (TRIAGE_MAX_STEPS)
+        B->>G: merged PRs / commits / issues / code search
+        G-->>B: real evidence (read-only)
     end
-    C-->>B: submit_triage(verdict)
-    B-->>U: Block Kit card (hypothesis, owner, evidence, draft issue)
+    B-->>U: verdict card — prior match, causal hypothesis,<br/>linked evidence, suggested owner, draft issue
+    R->>B: "Create GitHub issue" (click)
+    B->>G: POST /issues (allowlisted repo)
+    R->>B: "Log resolution" (click)
+    B->>M: remember(symptom, actual fix, was hypothesis right?)
+    Note over M: Next similar incident recalls THIS resolution.<br/>Culprit gets smarter with every incident.
 ```
 
 ## Design decisions
 
-- **Socket Mode** — outbound WebSocket only, so Culprit runs anywhere (incl. behind
-  a corporate firewall) with no public URL or inbound rule.
-- **MCP on both sides** — consumes the GitHub MCP server for evidence; exposes its
-  own `triage_incident` MCP tool so other agents can reuse Culprit.
-- **Read over MCP, write over REST** — the autonomous loop is read-only; filing an
-  issue is a deterministic, explicit, human-clicked action.
-- **Structured finalizer (`submit_triage`)** — guarantees a validated, render-ready
-  verdict instead of free-form prose, and bounds the loop.
-- **Honest scope** — every claim cites evidence the agent actually retrieved;
-  confidence is calibrated to how much evidence was found.
+- **Memory first, then git.** The strongest triage lead is "we solved this before" —
+  recall runs before any code archaeology, and the verdict's confidence is raised only
+  when memory and evidence corroborate each other. Resolved incidents are embedded
+  (`gemini-embedding-001`) with a lexical fallback so recall degrades, never fails.
+- **The learning loop closes in Slack.** "Log resolution" captures what *actually* fixed
+  the incident and whether the hypothesis was right — so confidence is earned from
+  outcomes, not guessed. Institutional knowledge stops evaporating in threads.
+- **MCP on both sides.** Culprit consumes the GitHub MCP server as a read-only evidence
+  source *and* serves its own `triage_incident` MCP tool, so any other agent can reuse it.
+- **Read over MCP, write over REST — with an allowlist.** The autonomous loop is
+  read-only; filing an issue is an explicit human click, restricted to allowlisted repos
+  (no confused-deputy).
+- **Pluggable brain.** `LLM_PROVIDER` switches between the free-tier Gemini path
+  (evidence over GitHub REST) and Claude (evidence over the GitHub MCP server) — same
+  prompt, same structured `submit_triage` finalizer, same memory.
+- **Socket Mode** — outbound WebSocket only; runs behind a corporate firewall with no
+  public URL.
+- **Output designed to industry benchmark.** Categorical confidence (never percentage
+  bars), one severity signal, numbered evidence links verifiable in under 30 seconds,
+  and a living Canvas as the durable incident record — following the conventions of
+  incident.io, Rootly, Datadog, and Slack's own Block Kit guidance.
+- **Honest scope.** Every claim cites a source Culprit actually retrieved; the card says
+  "hypothesis, not a verdict" and means it.

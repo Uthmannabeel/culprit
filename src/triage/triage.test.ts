@@ -78,6 +78,43 @@ describe("renderTriageBlocks", () => {
     expect(text).not.toContain("72%");
   });
 
+  test("keeps every section text under Slack's 3000-char limit even for huge verdicts", () => {
+    const huge = renderTriageBlocks(
+      {
+        ...sample,
+        rootCauseHypothesis: "very long cause ".repeat(400),
+        evidence: Array.from({ length: 6 }, (_, i) => ({
+          kind: "commit" as const,
+          title: `commit ${i} — ${"long title ".repeat(30)}`,
+          url: `https://github.com/o/r/commit/${"a".repeat(40)}?q=${"x".repeat(200)}`,
+          why: "reason ".repeat(60),
+        })),
+        priorIncidents: [
+          { id: "p1", symptom: "symptom ".repeat(100), resolution: "fix ".repeat(200), resolvedBy: "dana", similarity: 0.9, url: "https://x/1" },
+          { id: "p2", symptom: "symptom ".repeat(100), resolution: "fix ".repeat(200), resolvedBy: "sam", similarity: 0.8, url: "https://x/2" },
+        ],
+      },
+      "o/r",
+    );
+    for (const b of huge) {
+      if (b.type === "section" && "text" in b && b.text) {
+        expect((b.text as { text: string }).text.length).toBeLessThanOrEqual(3000);
+      }
+    }
+  });
+
+  test("pipes in evidence titles can't corrupt mrkdwn links", () => {
+    const withPipe = renderTriageBlocks(
+      {
+        ...sample,
+        evidence: [{ kind: "commit", title: "fix: a | b | c", url: "https://x/commit/1", why: "contains pipes" }],
+      },
+      "o/r",
+    );
+    const text = JSON.stringify(withPipe);
+    expect(text).toContain("fix: a / b / c"); // pipes neutralised in the link label
+  });
+
   test("keeps every button value under Slack's 2000-char limit even for huge drafts", () => {
     const huge = renderTriageBlocks(
       { ...sample, draftIssue: { ...sample.draftIssue, body: "detail ".repeat(1000) } },

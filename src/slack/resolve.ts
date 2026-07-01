@@ -1,5 +1,6 @@
 import type { View } from "@slack/types";
 import type { IncidentRecord } from "../memory/types.js";
+import { escapeMrkdwn } from "./format.js";
 
 /** Action + view IDs for the resolve-and-remember flow. */
 export const ACTION_MARK_RESOLVED = "triage_mark_resolved";
@@ -53,7 +54,7 @@ export function buildResolveModal(ctx: ResolveContext): View {
         type: "section",
         text: {
           type: "mrkdwn",
-          text: `Record what fixed this. Culprit stores it and recalls it when a similar incident is reported.\n\n*Incident:* ${ctx.symptom}`,
+          text: `Record what fixed this. Culprit stores it and recalls it when a similar incident is reported.\n\n*Incident:* ${escapeMrkdwn(ctx.symptom)}`,
         },
       },
       {
