@@ -78,6 +78,20 @@ describe("IncidentMemory.recall (lexical fallback)", () => {
   });
 });
 
+describe("IncidentMemory.forget", () => {
+  test("removes an entry by id and persists", async () => {
+    const memory = new IncidentMemory(makeConfig());
+    expect(await memory.forget("b")).toBe(true);
+    const onDisk = JSON.parse(await readFile(dbPath, "utf8")) as IncidentRecord[];
+    expect(onDisk.map((r) => r.id)).toEqual(["a", "c"]);
+  });
+
+  test("returns false for an unknown id", async () => {
+    const memory = new IncidentMemory(makeConfig());
+    expect(await memory.forget("nope")).toBe(false);
+  });
+});
+
 describe("IncidentMemory.stats", () => {
   test("aggregates resolutions and hypothesis outcomes", async () => {
     const memory = new IncidentMemory(makeConfig());

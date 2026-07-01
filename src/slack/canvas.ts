@@ -125,7 +125,11 @@ export async function createIncidentCanvas(
       .catch(() => null);
 
     return { canvasId, url };
-  } catch {
+  } catch (err) {
+    // Canvas is best-effort, but make the reason diagnosable (e.g. free-plan
+    // workspaces can't create standalone canvases; missing canvases:write).
+    // eslint-disable-next-line no-console
+    console.error("[canvas-create]", err instanceof Error ? err.message : err);
     return null;
   }
 }
@@ -138,7 +142,9 @@ export async function appendResolution(client: WebClient, canvasId: string, mark
       changes: [{ operation: "insert_at_end", document_content: { type: "markdown", markdown } }],
     });
     return true;
-  } catch {
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error("[canvas-append]", err instanceof Error ? err.message : err);
     return false;
   }
 }

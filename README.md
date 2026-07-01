@@ -107,9 +107,18 @@ Culprit executes them, feeds results back, and repeats until the model calls
 See [`architecture_diagram.md`](./architecture_diagram.md).
 
 The brain cross-checks **more than one signal** before concluding — recently merged
-pull requests (the strongest "what changed / who to ask" clue), recent commits, open
-issues, and a code search to locate the affected file — rather than betting on a single
+pull requests (the strongest "what changed / who to ask" clue), recent commits (scopable
+to the affected file), **deployments**, **CI workflow runs**, open issues, and a code
+search (with a filename fallback for unindexed repos) — rather than betting on a single
 source. Run `npm run verify:evidence` to confirm every signal works against your repo.
+
+Beyond @mentions, Culprit can watch **alert channels** (`ALERT_CHANNELS`): a webhook
+post from Sentry/PagerDuty/Datadog landing there is auto-triaged, no mention needed.
+Memory is manageable in-channel too — `@Culprit memory` shows what it knows,
+`@Culprit forget <id>` removes an entry, and `npm run import:issues` bootstraps memory
+from your repo's closed issues.
+
+Culprit is honest about what it can't do — see [`LIMITATIONS.md`](./LIMITATIONS.md).
 
 ## Pluggable brain
 

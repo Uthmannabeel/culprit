@@ -21,7 +21,8 @@ import {
 } from "./canvas.js";
 import { buildHomeView } from "./home.js";
 
-import { parseRepo, stripMentions } from "./parse.js";
+import { parseAlertChannels, parseMemoryCommand, parseRepo, shouldAutoTriage, stripMentions } from "./parse.js";
+import { friendlyTriageError } from "../triage/progress.js";
 
 /** Parse a JSON interaction payload defensively — never throw on bad input. */
 function safeJsonParse<T>(text: string | undefined): T | null {
@@ -61,6 +62,9 @@ export function registerHandlers(app: App, config: AppConfig): void {
   // One triage per thread at a time — a second mention while one is running
   // would silently kick off a duplicate investigation.
   const inFlight = new Set<string>();
+  // Workspace-wide cap so a burst of mentions can't exhaust LLM quota.
+  let activeTriages = 0;
+  const alertChannels = parseAlertChannels(config.ALERT_CHANNELS);
 
   const handleReport = async (args: {
     text: string;
@@ -80,6 +84,30 @@ export function registerHandlers(app: App, config: AppConfig): void {
       return;
     }
 
+    // Memory-management commands: "@Culprit memory" / "@Culprit forget <id>".
+    const command = parseMemoryCommand(report);
+    if (command) {
+      const memory = new IncidentMemory(config);
+      if (command.type === "stats") {
+        const s = await memory.stats();
+        await client.chat.postMessage({
+          channel,
+          thread_ts: threadTs,
+          text: `Memory: ${s.incidents} incident${s.incidents === 1 ? "" : "s"} remembered, ${s.resolved} with a logged resolution (hypothesis correct: ${s.hypothesisCorrect}, partially: ${s.hypothesisPartial}, incorrect: ${s.hypothesisIncorrect}). Remove an entry with \`forget <id>\`.`,
+        });
+      } else {
+        const removed = await memory.forget(command.id);
+        await client.chat.postMessage({
+          channel,
+          thread_ts: threadTs,
+          text: removed
+            ? `Removed \`${command.id}\` from memory — it will no longer be recalled.`
+            : `No memory entry with id \`${command.id}\`. Send \`memory\` to see what's stored.`,
+        });
+      }
+      return;
+    }
+
     const repo = parseRepo(report, config.GITHUB_DEFAULT_REPO);
     if (!repo) {
       await client.chat.postMessage({
@@ -95,7 +123,16 @@ export function registerHandlers(app: App, config: AppConfig): void {
       await client.chat.postMessage({ channel, thread_ts: threadTs, text: "Already investigating — updates will land in this thread." });
       return;
     }
+    if (activeTriages >= config.MAX_CONCURRENT_TRIAGES) {
+      await client.chat.postMessage({
+        channel,
+        thread_ts: threadTs,
+        text: `I'm at capacity (${config.MAX_CONCURRENT_TRIAGES} investigations running). Try again in a minute.`,
+      });
+      return;
+    }
     inFlight.add(flightKey);
+    activeTriages++;
 
     const ack = await client.chat.postMessage({
       channel,
@@ -132,11 +169,12 @@ export function registerHandlers(app: App, config: AppConfig): void {
       }
     } catch (err) {
       logError("triage", err);
-      const text = "⚠️ I couldn't complete triage on that one. Try again, or check the repo/token setup.";
+      const text = `⚠️ ${friendlyTriageError(err)}`;
       if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text });
       else await client.chat.postMessage({ channel, thread_ts: threadTs, text });
     } finally {
       inFlight.delete(flightKey);
+      activeTriages--;
     }
   };
 
@@ -175,18 +213,42 @@ export function registerHandlers(app: App, config: AppConfig): void {
     });
   });
 
-  // Triggered by a direct message to the agent.
-  app.message(async ({ message, client }) => {
-    // Only respond to plain user messages in a DM (channel_type "im").
-    if (message.subtype || message.channel_type !== "im") return;
-    const m = message as { text?: string; channel: string; ts: string; thread_ts?: string; user?: string };
-    await handleReport({
-      text: m.text ?? "",
-      channel: m.channel,
-      threadTs: m.thread_ts ?? m.ts,
-      userId: m.user,
-      client,
-    });
+  // Triggered by a direct message — or by an alert landing in a watched channel.
+  app.message(async ({ message, client, context }) => {
+    const m = message as {
+      text?: string;
+      channel: string;
+      channel_type?: string;
+      ts: string;
+      thread_ts?: string;
+      user?: string;
+      bot_id?: string;
+      subtype?: string;
+    };
+
+    // Plain user messages in a DM (channel_type "im").
+    if (!m.subtype && m.channel_type === "im") {
+      await handleReport({
+        text: m.text ?? "",
+        channel: m.channel,
+        threadTs: m.thread_ts ?? m.ts,
+        userId: m.user,
+        client,
+      });
+      return;
+    }
+
+    // Alert channels: a top-level message (e.g. a Sentry/PagerDuty webhook post)
+    // is auto-triaged — no @mention needed. Culprit meets alerts where they land.
+    if (shouldAutoTriage(m, alertChannels, context.botId)) {
+      await handleReport({
+        text: m.text ?? "",
+        channel: m.channel,
+        threadTs: m.ts, // reply in the alert's own thread
+        userId: m.user,
+        client,
+      });
+    }
   });
 
   // Button: file the drafted issue on GitHub.

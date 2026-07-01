@@ -1,6 +1,12 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AppConfig } from "../config.js";
-import { listRecentPullRequests, listOpenIssues, searchCode } from "./evidence.js";
+import {
+  listRecentPullRequests,
+  listOpenIssues,
+  listRecentDeployments,
+  listRecentWorkflowRuns,
+  searchCode,
+} from "./evidence.js";
 
 const config = { GITHUB_TOKEN: "test-token" } as AppConfig;
 
@@ -73,8 +79,40 @@ describe("searchCode", () => {
     expect(matches).toEqual([{ path: "src/checkout.js", url: "https://github.com/o/r/blob/main/src/checkout.js" }]);
   });
 
-  test("returns an empty array when there are no items", async () => {
-    mockFetchJson({});
-    expect(await searchCode(config, "o/r", "nothing")).toEqual([]);
+  test("falls back to filename matching when the index has nothing", async () => {
+    // First call (code search) returns empty; second call (git tree) matches.
+    const responses: unknown[] = [
+      {},
+      { tree: [{ path: "src/payments.js", type: "blob" }, { path: "docs/notes.md", type: "blob" }] },
+    ];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: true, status: 200, json: async () => responses.shift(), text: async () => "" }) as unknown as Response),
+    );
+
+    const matches = await searchCode(config, "o/r", "payments");
+    expect(matches).toEqual([{ path: "src/payments.js", url: "https://github.com/o/r/blob/HEAD/src/payments.js" }]);
+  });
+});
+
+describe("listRecentDeployments", () => {
+  test("maps environment, ref, and creator", async () => {
+    mockFetchJson([
+      { environment: "production", ref: "main", sha: "a".repeat(40), created_at: "2026-06-25T21:00:00Z", creator: { login: "dana" } },
+    ]);
+    const deploys = await listRecentDeployments(config, "o/r");
+    expect(deploys[0]).toMatchObject({ environment: "production", ref: "main", sha: "aaaaaaaaaa", creator: "dana" });
+  });
+});
+
+describe("listRecentWorkflowRuns", () => {
+  test("maps run name, conclusion, and branch", async () => {
+    mockFetchJson({
+      workflow_runs: [
+        { name: "CI", conclusion: "failure", head_branch: "main", head_sha: "b".repeat(40), created_at: "2026-06-25T21:05:00Z", html_url: "https://x/runs/1" },
+      ],
+    });
+    const runs = await listRecentWorkflowRuns(config, "o/r");
+    expect(runs[0]).toMatchObject({ name: "CI", conclusion: "failure", branch: "main", sha: "bbbbbbbbbb" });
   });
 });

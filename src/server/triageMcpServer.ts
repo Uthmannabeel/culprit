@@ -26,8 +26,12 @@ async function main(): Promise<void> {
         const result = await runTriage(config, { report, repo });
         return { content: [{ type: "text", text: JSON.stringify(result, null, 2) }] };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        return { content: [{ type: "text", text: `Triage failed: ${message}` }], isError: true };
+        const e = err as Error & { cause?: { message?: string } };
+        const detail = e.cause?.message ? ` (${e.cause.message})` : "";
+        return {
+          content: [{ type: "text", text: `Triage failed: ${e.message}${detail}` }],
+          isError: true,
+        };
       }
     },
   );

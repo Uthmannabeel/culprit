@@ -17,6 +17,10 @@ with `LLM_PROVIDER` (`gemini` for the free-tier path, `anthropic` for Claude+MCP
       of are never delivered (no error, just silence).
 - [ ] **Hotspot / home Wi-Fi** — corporate networks drop Slack's Socket Mode WebSocket.
 - [ ] `npm run verify:evidence` and `npm run verify:memory` both green.
+- [ ] **Mind the free-tier LLM quota** — the Gemini free tier caps daily requests per
+      model, and each triage uses several. Don't burn the quota rehearsing on demo day;
+      have a **second API key** (separate Google project) ready as backup. If triage says
+      "rate limit", that's what happened (`npm run debug:triage` shows the raw error).
 - [ ] `data/incidents.json` still has the seed incidents — the "we've seen this before"
       beat depends on them.
 

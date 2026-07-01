@@ -9,6 +9,8 @@ import {
   getFileContents,
   listRecentPullRequests,
   listOpenIssues,
+  listRecentDeployments,
+  listRecentWorkflowRuns,
   searchCode,
 } from "../github/evidence.js";
 import { IncidentMemory } from "../memory/store.js";
@@ -21,10 +23,14 @@ import { describeToolCall } from "./progress.js";
 const EVIDENCE_TOOLS: FunctionDeclaration[] = [
   {
     name: "list_recent_commits",
-    description: "List the most recent commits on the default branch (sha, first line, author, date, url). Start here.",
+    description:
+      "List the most recent commits on the default branch (sha, first line, author, date, url). Pass `path` to see only commits touching one file/directory — ideal once you've located the affected code.",
     parameters: {
       type: Type.OBJECT,
-      properties: { perPage: { type: Type.NUMBER, description: "How many commits (max 30)." } },
+      properties: {
+        perPage: { type: Type.NUMBER, description: "How many commits (max 30)." },
+        path: { type: Type.STRING, description: "Optional file or directory to scope the history to." },
+      },
     },
   },
   {
@@ -74,6 +80,24 @@ const EVIDENCE_TOOLS: FunctionDeclaration[] = [
       type: Type.OBJECT,
       properties: { query: { type: Type.STRING, description: "Search term, e.g. checkout or STRIPE_API_KEY." } },
       required: ["query"],
+    },
+  },
+  {
+    name: "list_recent_deployments",
+    description:
+      "List recent deployments (environment, ref, sha, creator, createdAt). Incidents cluster around deploys — check whether something shipped right before the symptom started.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: { perPage: { type: Type.NUMBER, description: "How many deployments (max 20)." } },
+    },
+  },
+  {
+    name: "list_recent_workflow_runs",
+    description:
+      "List recent CI workflow runs (name, conclusion, branch, sha, createdAt, url). A run that flipped from success to failure near the report time is a strong signal.",
+    parameters: {
+      type: Type.OBJECT,
+      properties: { perPage: { type: Type.NUMBER, description: "How many runs (max 30)." } },
     },
   },
   {
@@ -138,8 +162,15 @@ async function runEvidenceTool(
 ): Promise<string> {
   try {
     if (name === "list_recent_commits") {
-      const commits = await listRecentCommits(config, repo, Number(args.perPage) || 12);
+      const path = typeof args.path === "string" && args.path.length > 0 ? args.path : undefined;
+      const commits = await listRecentCommits(config, repo, Number(args.perPage) || 12, path);
       return JSON.stringify(commits);
+    }
+    if (name === "list_recent_deployments") {
+      return JSON.stringify(await listRecentDeployments(config, repo, Number(args.perPage) || 5));
+    }
+    if (name === "list_recent_workflow_runs") {
+      return JSON.stringify(await listRecentWorkflowRuns(config, repo, Number(args.perPage) || 10));
     }
     if (name === "get_commit") {
       return JSON.stringify(await getCommit(config, repo, String(args.sha)));

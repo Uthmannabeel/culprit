@@ -55,7 +55,16 @@ const EnvSchema = z
     GITHUB_MCP_MODE: z.enum(["remote", "local"]).default("remote"),
     GITHUB_MCP_URL: z.string().url().default("https://api.githubcopilot.com/mcp/"),
 
-    TRIAGE_MAX_STEPS: z.coerce.number().int().positive().max(20).default(6),
+    // Channels Culprit watches for alerts (comma-separated channel IDs). A
+    // top-level message posted there — e.g. by a Sentry/PagerDuty webhook — is
+    // auto-triaged without needing an @mention.
+    ALERT_CHANNELS: z.string().optional(),
+
+    // Cap on simultaneous triages across the workspace, so a burst of mentions
+    // can't exhaust the LLM quota mid-incident.
+    MAX_CONCURRENT_TRIAGES: z.coerce.number().int().positive().max(20).default(3),
+
+    TRIAGE_MAX_STEPS: z.coerce.number().int().positive().max(20).default(8),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   })
   .superRefine((cfg, ctx) => {

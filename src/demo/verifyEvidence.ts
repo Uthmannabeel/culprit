@@ -1,5 +1,12 @@
 import { loadConfig } from "../config.js";
-import { listRecentCommits, listRecentPullRequests, listOpenIssues, searchCode } from "../github/evidence.js";
+import {
+  listRecentCommits,
+  listRecentPullRequests,
+  listOpenIssues,
+  listRecentDeployments,
+  listRecentWorkflowRuns,
+  searchCode,
+} from "../github/evidence.js";
 
 /**
  * Exercises every read-only evidence signal against the configured repo so we
@@ -18,7 +25,9 @@ async function main(): Promise<void> {
     { label: "commits   (Contents:read)", run: () => listRecentCommits(config, repo, 3) },
     { label: "pull reqs (Pull requests:read)", run: () => listRecentPullRequests(config, repo, "closed", 3) },
     { label: "issues    (Issues:read)", run: () => listOpenIssues(config, repo, 3) },
-    { label: "code      (code search)", run: () => searchCode(config, repo, "checkout") },
+    { label: "deploys   (Deployments:read)", run: () => listRecentDeployments(config, repo, 3) },
+    { label: "CI runs   (Actions:read)", run: () => listRecentWorkflowRuns(config, repo, 3) },
+    { label: "code      (search + filename fallback)", run: () => searchCode(config, repo, "checkout") },
   ];
 
   let failures = 0;

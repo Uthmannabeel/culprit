@@ -39,10 +39,19 @@ export interface CommitSummary {
   url: string;
 }
 
-/** Most recent commits on the default branch. */
-export async function listRecentCommits(config: AppConfig, repo: string, perPage = 12): Promise<CommitSummary[]> {
+/** Most recent commits on the default branch, optionally scoped to one path. */
+export async function listRecentCommits(
+  config: AppConfig,
+  repo: string,
+  perPage = 12,
+  path?: string,
+): Promise<CommitSummary[]> {
   const [owner, name] = splitRepo(repo);
-  const data = (await ghGet(config, `/repos/${owner}/${name}/commits?per_page=${Math.min(perPage, 30)}`)) as Array<{
+  const pathParam = path ? `&path=${encodeURIComponent(path)}` : "";
+  const data = (await ghGet(
+    config,
+    `/repos/${owner}/${name}/commits?per_page=${Math.min(perPage, 30)}${pathParam}`,
+  )) as Array<{
     sha: string;
     html_url: string;
     commit: { message: string; author?: { date?: string } };
@@ -196,7 +205,9 @@ export interface CodeMatch {
 /**
  * Search the repo's code for a term (e.g. a route, symbol, or error string from
  * the report) to locate the affected area instead of guessing from recent
- * commits alone. Uses GitHub's code search; results are best-effort.
+ * commits alone. Uses GitHub's code search; when the index has nothing (new or
+ * small repos are often unindexed) it falls back to filename matching over the
+ * repo tree so the tool still returns something useful.
  */
 export async function searchCode(config: AppConfig, repo: string, query: string, perPage = 8): Promise<CodeMatch[]> {
   const [owner, name] = splitRepo(repo);
@@ -204,5 +215,95 @@ export async function searchCode(config: AppConfig, repo: string, query: string,
   const data = (await ghGet(config, `/search/code?q=${q}&per_page=${Math.min(perPage, 20)}`)) as {
     items?: Array<{ path: string; html_url: string }>;
   };
-  return (data.items ?? []).map((m) => ({ path: m.path, url: m.html_url }));
+  const indexed = (data.items ?? []).map((m) => ({ path: m.path, url: m.html_url }));
+  if (indexed.length > 0) return indexed;
+  return searchFilenames(config, repo, query, perPage);
+}
+
+/** Filename fallback: match the query against the repo tree. Best-effort. */
+async function searchFilenames(config: AppConfig, repo: string, query: string, limit: number): Promise<CodeMatch[]> {
+  const [owner, name] = splitRepo(repo);
+  try {
+    const tree = (await ghGet(config, `/repos/${owner}/${name}/git/trees/HEAD?recursive=1`)) as {
+      tree?: Array<{ path: string; type: string }>;
+    };
+    const needle = query.toLowerCase().replace(/[^a-z0-9]+/g, "");
+    if (!needle) return [];
+    return (tree.tree ?? [])
+      .filter((e) => e.type === "blob" && e.path.toLowerCase().replace(/[^a-z0-9]+/g, "").includes(needle))
+      .slice(0, limit)
+      .map((e) => ({ path: e.path, url: `https://github.com/${owner}/${name}/blob/HEAD/${e.path}` }));
+  } catch {
+    return [];
+  }
+}
+
+export interface DeploymentSummary {
+  environment: string;
+  ref: string;
+  sha: string;
+  creator: string;
+  createdAt: string;
+}
+
+/**
+ * Recent deployments — "what shipped, where, when" is the closest thing to a
+ * runtime signal available from GitHub alone, and incidents cluster around
+ * deploy times.
+ */
+export async function listRecentDeployments(config: AppConfig, repo: string, perPage = 5): Promise<DeploymentSummary[]> {
+  const [owner, name] = splitRepo(repo);
+  const data = (await ghGet(config, `/repos/${owner}/${name}/deployments?per_page=${Math.min(perPage, 20)}`)) as Array<{
+    environment?: string;
+    ref?: string;
+    sha?: string;
+    created_at?: string;
+    creator?: { login?: string } | null;
+  }>;
+  return data.map((d) => ({
+    environment: d.environment ?? "unknown",
+    ref: d.ref ?? "",
+    sha: (d.sha ?? "").slice(0, 10),
+    creator: d.creator?.login ?? "unknown",
+    createdAt: d.created_at ?? "",
+  }));
+}
+
+export interface WorkflowRunSummary {
+  name: string;
+  conclusion: string;
+  branch: string;
+  sha: string;
+  createdAt: string;
+  url: string;
+}
+
+/**
+ * Recent CI workflow runs. A run that flipped from success to failure around
+ * the report time is a strong, near-runtime signal (build/test/deploy broke).
+ */
+export async function listRecentWorkflowRuns(config: AppConfig, repo: string, perPage = 10): Promise<WorkflowRunSummary[]> {
+  const [owner, name] = splitRepo(repo);
+  const data = (await ghGet(
+    config,
+    `/repos/${owner}/${name}/actions/runs?per_page=${Math.min(perPage, 30)}`,
+  )) as {
+    workflow_runs?: Array<{
+      name?: string;
+      conclusion?: string | null;
+      status?: string;
+      head_branch?: string;
+      head_sha?: string;
+      created_at?: string;
+      html_url?: string;
+    }>;
+  };
+  return (data.workflow_runs ?? []).map((r) => ({
+    name: r.name ?? "workflow",
+    conclusion: r.conclusion ?? r.status ?? "unknown",
+    branch: r.head_branch ?? "",
+    sha: (r.head_sha ?? "").slice(0, 10),
+    createdAt: r.created_at ?? "",
+    url: r.html_url ?? "",
+  }));
 }

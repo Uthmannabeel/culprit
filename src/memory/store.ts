@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile, writeFile, mkdir, rename } from "node:fs/promises";
 import { dirname } from "node:path";
 import type { AppConfig } from "../config.js";
 import { embedTexts } from "./embeddings.js";
@@ -31,6 +31,14 @@ export interface MemoryStats {
  * resolving incidents at once) can't lose updates through read-modify-write
  * interleaving on the JSON file.
  */
+/** Write via temp-file + rename so a crash mid-write can't corrupt the store. */
+async function atomicWrite(path: string, content: string): Promise<void> {
+  await mkdir(dirname(path), { recursive: true });
+  const tmp = `${path}.tmp`;
+  await writeFile(tmp, content, "utf8");
+  await rename(tmp, path);
+}
+
 const writeLocks = new Map<string, Promise<unknown>>();
 async function withWriteLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
   const prev = writeLocks.get(key) ?? Promise.resolve();
@@ -133,6 +141,27 @@ export class IncidentMemory {
     this.loaded = true;
   }
 
+  /**
+   * Remove a remembered incident by id — the moderation/undo path for a wrong
+   * or poisoned entry. Returns whether anything was removed.
+   */
+  async forget(id: string): Promise<boolean> {
+    let removed = false;
+    await withWriteLock(this.path, async () => {
+      this.records = await this.readRecords();
+      await this.attachCachedEmbeddings();
+      const before = this.records.length;
+      this.records = this.records.filter((r) => r.id !== id);
+      removed = this.records.length < before;
+      if (removed) {
+        await this.save();
+        await this.saveCache();
+      }
+    });
+    this.loaded = true;
+    return removed;
+  }
+
   private minScoreFor(method: RecallHit["method"]): number {
     return method === "lexical" ? this.config.MEMORY_MIN_SCORE_LEXICAL : this.config.MEMORY_MIN_SCORE;
   }
@@ -204,17 +233,15 @@ export class IncidentMemory {
       if (r.embedding) cache[r.id] = { text: recordText(r), vector: r.embedding };
     }
     try {
-      await mkdir(dirname(this.cachePath), { recursive: true });
-      await writeFile(this.cachePath, JSON.stringify(cache), "utf8");
+      await atomicWrite(this.cachePath, JSON.stringify(cache));
     } catch {
       // best-effort — worst case is a re-embed on the next process start
     }
   }
 
   private async save(): Promise<void> {
-    await mkdir(dirname(this.path), { recursive: true });
     // Vectors live in the sidecar cache; keep this file clean and diffable.
     const clean = this.records.map((r) => ({ ...r, embedding: null }));
-    await writeFile(this.path, JSON.stringify(clean, null, 2), "utf8");
+    await atomicWrite(this.path, JSON.stringify(clean, null, 2));
   }
 }
