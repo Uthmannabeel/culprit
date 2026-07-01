@@ -10,8 +10,9 @@ with `LLM_PROVIDER` (`gemini` for the free-tier path, `anthropic` for Claude+MCP
 
 **Pre-demo checklist (each of these fails *silently* if skipped):**
 
-- [ ] **Reinstall the Slack app** after any manifest/scope change — the canvas needs
-      `canvases:write` + `files:read`; without a reinstall the card just shows no canvas link.
+- [ ] **Update the app's manifest and reinstall** — the canvas needs `canvases:write` +
+      `files:read`, and the App Home tab needs the `app_home` feature + `app_home_opened`
+      event (paste the repo's `manifest.json` into the app config, then reinstall).
 - [ ] **`/invite @Culprit`** to the demo channel — mentions in channels it's not a member
       of are never delivered (no error, just silence).
 - [ ] **Hotspot / home Wi-Fi** — corporate networks drop Slack's Socket Mode WebSocket.
@@ -63,6 +64,10 @@ hypothesis was right. Submit → Culprit replies **Resolution logged** and appen
 To prove the compounding without Slack, run `npm run verify:learning`: a paraphrased
 report matches **nothing**, Culprit learns the incident, and the same report then recalls
 the exact fix and who applied it.
+
+Optionally flash Culprit's **App Home** (click the app name → Home tab): it publishes its
+own **track record** — hypothesis outcomes across the team's logged resolutions.
+> "It scores itself against real outcomes. That's what earned confidence means."
 
 ### 2:25 — The MCP story (35s)
 Show the architecture diagram. 

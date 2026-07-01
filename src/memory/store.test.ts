@@ -78,6 +78,21 @@ describe("IncidentMemory.recall (lexical fallback)", () => {
   });
 });
 
+describe("IncidentMemory.stats", () => {
+  test("aggregates resolutions and hypothesis outcomes", async () => {
+    const memory = new IncidentMemory(makeConfig());
+    const stats = await memory.stats();
+    // All 3 seeds have a resolution; none carry an explicit outcome → partial.
+    expect(stats).toEqual({
+      incidents: 3,
+      resolved: 3,
+      hypothesisCorrect: 0,
+      hypothesisPartial: 3,
+      hypothesisIncorrect: 0,
+    });
+  });
+});
+
 describe("IncidentMemory.remember", () => {
   function fullRecord(id: string): IncidentRecord {
     return {

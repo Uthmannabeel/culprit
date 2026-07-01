@@ -65,5 +65,7 @@ const blocks = renderTriageBlocks(SAMPLE, "Uthmannabeel/culprit-demo-shop", "che
 
 console.log("── Verdict card (paste into https://app.slack.com/block-kit-builder) ──\n");
 console.log(JSON.stringify({ blocks }, null, 2));
+console.log("\n── One-click Block Kit Builder link ──\n");
+console.log(`https://app.slack.com/block-kit-builder/#${encodeURIComponent(JSON.stringify({ blocks }))}`);
 console.log("\n── Incident canvas markdown ──\n");
 console.log(buildIncidentCanvasMarkdown(SAMPLE, "Uthmannabeel/culprit-demo-shop", "checkout is throwing 500s since this morning", "nabeel"));

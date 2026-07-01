@@ -55,6 +55,9 @@ in your workspace.
   *what actually fixed it* and whether the hypothesis was right, then writes it back to memory.
   Confidence is therefore **earned** — the next matching incident recalls a real outcome
   your team produced, not a guess.
+- **A self-reported track record:** Culprit's App Home publishes its hypothesis outcomes
+  across the team's logged resolutions (correct / partially correct / incorrect) — an AI
+  agent that shows its own scorecard is one you can calibrate trust against.
 - **Native Slack surfaces:** beyond the in-thread Block Kit card, Culprit maintains a live
   **Slack Canvas** per incident (symptom → hypothesis → evidence → owner) and appends the
   resolution on close — a durable, shareable record that lives in Slack instead of
@@ -67,8 +70,8 @@ in your workspace.
   so any other MCP-speaking agent can reuse Culprit — regardless of which brain runs.
 - **Write-path:** filing the issue is a deterministic, explicit, human-clicked GitHub
   REST call — the autonomous loop itself is read-only.
-- Built on the **ECC (Everything Claude Code)** agent harness; TypeScript, tested,
-  type-checked.
+- Built on the **ECC (Everything Claude Code)** agent harness; TypeScript (strict),
+  68 tests + typecheck running in GitHub Actions CI on every push.
 
 ## How it meets the requirements
 

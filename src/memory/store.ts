@@ -17,6 +17,15 @@ interface EmbeddingCacheEntry {
 }
 type EmbeddingCache = Record<string, EmbeddingCacheEntry>;
 
+/** Aggregate outcomes across the remembered incidents. */
+export interface MemoryStats {
+  incidents: number;
+  resolved: number;
+  hypothesisCorrect: number;
+  hypothesisPartial: number;
+  hypothesisIncorrect: number;
+}
+
 /**
  * Serialise writes per db path so concurrent remember() calls (two responders
  * resolving incidents at once) can't lose updates through read-modify-write
@@ -64,6 +73,24 @@ export class IncidentMemory {
   /** How many incidents are remembered. */
   size(): number {
     return this.records.length;
+  }
+
+  /**
+   * Culprit's earned track record, computed from logged outcomes — the basis
+   * for the App Home "how well does it actually do here?" panel. Only
+   * incidents with a recorded resolution count; hypothesis outcomes are
+   * correct (true) / partially correct (null) / incorrect (false).
+   */
+  async stats(): Promise<MemoryStats> {
+    if (!this.loaded) await this.load();
+    const resolved = this.records.filter((r) => r.resolution.length > 0);
+    return {
+      incidents: this.records.length,
+      resolved: resolved.length,
+      hypothesisCorrect: resolved.filter((r) => r.hypothesisWasCorrect === true).length,
+      hypothesisPartial: resolved.filter((r) => r.hypothesisWasCorrect === null).length,
+      hypothesisIncorrect: resolved.filter((r) => r.hypothesisWasCorrect === false).length,
+    };
   }
 
   /**

@@ -14,6 +14,11 @@
       "suggested_prompts": [
         { "title": "Triage an incident", "message": "Checkout is returning 500s repo:owner/repo" }
       ]
+    },
+    "app_home": {
+      "home_tab_enabled": true,
+      "messages_tab_enabled": true,
+      "messages_tab_read_only_enabled": false
     }
   },
   "oauth_config": {
@@ -36,6 +41,7 @@
   "settings": {
     "event_subscriptions": {
       "bot_events": [
+        "app_home_opened",
         "app_mention",
         "assistant_thread_started",
         "message.im"

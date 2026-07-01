@@ -19,6 +19,7 @@ import {
   buildResolutionCanvasMarkdown,
   createIncidentCanvas,
 } from "./canvas.js";
+import { buildHomeView } from "./home.js";
 
 import { parseRepo, stripMentions } from "./parse.js";
 
@@ -148,6 +149,18 @@ export function registerHandlers(app: App, config: AppConfig): void {
       userId: event.user,
       client,
     });
+  });
+
+  // App Home: usage guide + Culprit's earned track record from logged outcomes.
+  app.event("app_home_opened", async ({ event, client }) => {
+    if ((event as { tab?: string }).tab !== "home") return;
+    try {
+      const memory = new IncidentMemory(config);
+      const stats = await memory.stats();
+      await client.views.publish({ user_id: event.user, view: buildHomeView(stats) });
+    } catch (err) {
+      logError("app-home", err);
+    }
   });
 
   // Greet users who open Culprit's assistant panel — the manifest subscribes to
