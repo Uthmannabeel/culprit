@@ -53,6 +53,10 @@ in your workspace.
   actually fixed it* and whether the hypothesis was right, then writes it back to memory.
   Confidence is therefore **earned** — the next matching incident recalls a real outcome
   your team produced, not a guess.
+- **Native Slack surfaces:** beyond the in-thread Block Kit card, Culprit maintains a live
+  **Slack Canvas** per incident (symptom → hypothesis → evidence → owner) and appends the
+  resolution on close — a durable, shareable record that lives in Slack instead of
+  scrolling away.
 - **Multi-signal evidence:** rather than betting on one source, Culprit cross-checks
   recently merged **pull requests** (the strongest "what changed / who to ask" clue),
   recent **commits**, open **issues**, and a **code search** to locate the affected file.

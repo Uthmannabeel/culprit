@@ -28,6 +28,11 @@ The loop closes in Slack: when an incident is fixed, click **✅ Mark resolved**
 Culprit *what actually fixed it*, and it writes that back to memory — so the calibrated
 confidence is **earned**, not guessed. Try it headless with `npm run verify:learning`.
 
+And it's **native to Slack's surfaces**: alongside the in-thread card, Culprit opens a
+live **Slack Canvas** for each incident (symptom → hypothesis → evidence → owner) and
+appends the resolution when you close it out — a durable, shareable record that doesn't
+scroll away. (Canvas is best-effort: needs `canvases:write`; triage works without it.)
+
 ---
 
 ## Why it fits the challenge
@@ -142,8 +147,10 @@ src/
   config.ts            # validated env config
   index.ts             # entrypoint (Socket Mode)
   app.ts               # Bolt app wiring
-  slack/handlers.ts    # @mention / DM triggers + create-issue action
+  slack/handlers.ts    # @mention / DM triggers + issue/resolve actions
   slack/blocks.ts      # Block Kit rendering
+  slack/resolve.ts     # "mark resolved" modal + record builder (learning loop)
+  slack/canvas.ts      # living Slack Canvas incident doc
   triage/brain.ts      # provider switch (anthropic | gemini)
   triage/brainClaude.ts # agentic loop on Claude + GitHub MCP
   triage/brainGemini.ts # agentic loop on Gemini + GitHub REST evidence

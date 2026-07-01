@@ -31,6 +31,8 @@ The card lands. Walk through it:
 - **Evidence** — each line links to a **real** commit / PR / file it pulled.
 - **Suspected owner** — from commit/PR authorship.
 - **Confidence bar** — higher *because* memory corroborates the code.
+- **📄 Live incident canvas** — click it: Culprit has opened a Slack Canvas with the whole
+  incident (symptom, hypothesis, evidence, owner). It's a durable doc, not a card that scrolls away.
 > "Notice it says *hypothesis* — every claim links to a source it actually found, and it
 > remembers what your team already solved."
 
@@ -41,7 +43,8 @@ a clean, pre-written issue with title, body, and labels.
 
 ### 1:55 — Close the loop, and it gets smarter (30s)
 Click **✅ Mark resolved**. A modal asks *what actually fixed it* and whether the
-hypothesis was right. Submit → Culprit replies **🧠 Logged to memory**.
+hypothesis was right. Submit → Culprit replies **🧠 Logged to memory** and appends a
+**✅ Resolved** section to the incident canvas.
 > "That fix is now part of the org's memory. The next time this rhymes, Culprit recalls
 > it — it compounds with every incident."
 

@@ -15,6 +15,7 @@ const ctx: ResolveContext = {
   link: "https://github.com/acme/store/pull/1",
   channel: "C1",
   threadTs: "1700.1",
+  canvasId: null,
 };
 
 describe("buildResolveModal", () => {

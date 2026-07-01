@@ -21,7 +21,12 @@ function confidenceBar(confidence: number): string {
  * Render a triage verdict as Slack Block Kit. The draftIssue is stashed in the
  * button value so the action handler can file it without re-running analysis.
  */
-export function renderTriageBlocks(result: TriageResult, repo: string, report?: string): KnownBlock[] {
+export function renderTriageBlocks(
+  result: TriageResult,
+  repo: string,
+  report?: string,
+  canvas?: { id: string | null; url: string | null },
+): KnownBlock[] {
   const blocks: KnownBlock[] = [
     {
       type: "header",
@@ -100,6 +105,14 @@ export function renderTriageBlocks(result: TriageResult, repo: string, report?: 
       }_`,
     },
   });
+  if (canvas?.url) {
+    blocks.push({ type: "divider" });
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: `📄 <${canvas.url}|Live incident canvas> — updates as this resolves` },
+    });
+  }
+
   const resolveCtx: ResolveContext = {
     symptom: (report ?? result.summary).slice(0, 300),
     hypothesis: result.rootCauseHypothesis.slice(0, 600),
@@ -108,6 +121,7 @@ export function renderTriageBlocks(result: TriageResult, repo: string, report?: 
     link: result.evidence.find((e) => e.url)?.url ?? result.priorIncidents[0]?.url ?? null,
     channel: null,
     threadTs: null,
+    canvasId: canvas?.id ?? null,
   };
   blocks.push({
     type: "actions",

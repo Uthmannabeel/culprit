@@ -26,6 +26,11 @@ const EnvSchema = z
 
     // Incident memory — Culprit's institutional knowledge of past incidents.
     INCIDENTS_DB_PATH: z.string().default("data/incidents.json"),
+    // Maintain a living Slack Canvas per incident (needs canvases:write scope).
+    CANVAS_ENABLED: z
+      .enum(["true", "false"])
+      .default("true")
+      .transform((v) => v === "true"),
     MEMORY_RECALL_K: z.coerce.number().int().positive().max(10).default(3),
     // Tuned for gemini-embedding-001, whose cosine floor for unrelated text is
     // ~0.55. 0.70 keeps recall precise — a wrong "we've seen this" is worse than

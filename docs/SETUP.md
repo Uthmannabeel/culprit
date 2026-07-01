@@ -13,12 +13,19 @@ create for you). Everything else is built.
 5. **Basic Information → App-Level Tokens → Generate** a token with scope
    `connections:write`. Copy it (`xapp-…`) → `SLACK_APP_TOKEN`.
 
-> The manifest already enables Socket Mode, the right scopes, and the
-> `app_mention` / `message.im` events — no public URL needed.
+> The manifest already enables Socket Mode, the right scopes (including
+> `canvases:write` + `files:read` for the live incident canvas), and the
+> `app_mention` / `message.im` events — no public URL needed. If you add scopes
+> later, **reinstall** the app so they take effect.
 
-## 2. Anthropic API key
+## 2. Brain API key (pick one)
 
-From <https://console.anthropic.com/> → API keys → `ANTHROPIC_API_KEY`.
+Culprit's brain is pluggable via `LLM_PROVIDER`:
+
+- **`gemini`** (free tier, recommended for a quick start): a Google AI Studio key →
+  `GEMINI_API_KEY`. Run `npm run list:models` to confirm your key has an embedding model
+  (memory recall uses `gemini-embedding-001`).
+- **`anthropic`**: from <https://console.anthropic.com/> → API keys → `ANTHROPIC_API_KEY`.
 
 ## 3. GitHub token
 
@@ -29,9 +36,18 @@ A fine-grained PAT scoped to the repo(s) you'll demo against is ideal.
 ## 4. Run it
 
 ```bash
-cp .env.example .env   # paste the four values above
+cp .env.example .env   # paste the values above (Slack xoxb/xapp, brain key, GitHub)
 npm install
 npm run dev
+```
+
+Sanity-check before demoing (no Slack needed):
+
+```bash
+npm run verify:evidence   # GitHub signals + token scopes
+npm run verify:memory     # incident recall (embeddings)
+npm run verify:learning   # the learning loop compounds
+npm run demo:mcp          # full triage over Culprit's own MCP server
 ```
 
 In Slack: invite the bot to a channel, then `@Culprit <what's broken> repo:owner/repo`.

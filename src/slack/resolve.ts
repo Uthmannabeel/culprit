@@ -18,6 +18,8 @@ export interface ResolveContext {
   link: string | null;
   channel: string | null;
   threadTs: string | null;
+  /** The incident canvas to append the resolution to, if one was created. */
+  canvasId: string | null;
 }
 
 /** The fields a responder fills in when they close out an incident. */

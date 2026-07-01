@@ -12,6 +12,12 @@ import {
   parseResolveSubmission,
   type ResolveContext,
 } from "./resolve.js";
+import {
+  appendResolution,
+  buildIncidentCanvasMarkdown,
+  buildResolutionCanvasMarkdown,
+  createIncidentCanvas,
+} from "./canvas.js";
 
 /** Pull an explicit repo out of the message text, else fall back to default. */
 function parseRepo(text: string, fallback?: string): string | undefined {
@@ -65,7 +71,19 @@ export function registerHandlers(app: App, config: AppConfig): void {
           if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text: `🔍 ${note}…` });
         },
       );
-      const blocks = renderTriageBlocks(result, repo ?? "unknown", report);
+      const canvas = config.CANVAS_ENABLED
+        ? await createIncidentCanvas(client, {
+            title: `Incident: ${result.summary}`.slice(0, 120),
+            markdown: buildIncidentCanvasMarkdown(result, repo ?? "unknown", report, userName),
+            channel,
+          })
+        : null;
+      const blocks = renderTriageBlocks(
+        result,
+        repo ?? "unknown",
+        report,
+        canvas ? { id: canvas.canvasId, url: canvas.url } : undefined,
+      );
       if (ack.ts) {
         await client.chat.update({ channel, ts: ack.ts, text: result.summary, blocks });
       } else {
@@ -149,6 +167,9 @@ export function registerHandlers(app: App, config: AppConfig): void {
     try {
       const memory = new IncidentMemory(config);
       await memory.remember(record);
+      if (ctx.canvasId) {
+        await appendResolution(client, ctx.canvasId, buildResolutionCanvasMarkdown(record));
+      }
       if (ctx.channel) {
         const fix = record.resolution ? `: _${record.resolution}_` : ".";
         await client.chat.postMessage({

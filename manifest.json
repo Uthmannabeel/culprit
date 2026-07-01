@@ -22,6 +22,8 @@
         "app_mentions:read",
         "assistant:write",
         "chat:write",
+        "canvases:write",
+        "files:read",
         "im:history",
         "im:read",
         "im:write",
