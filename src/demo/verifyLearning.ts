@@ -16,6 +16,7 @@ async function main(): Promise<void> {
   const config = loadConfig();
   const dbPath = join(tmpdir(), "culprit-learning-demo.json");
   await rm(dbPath, { force: true });
+  await rm(`${dbPath}.cache.json`, { force: true });
 
   const memory = new IncidentMemory(config, dbPath);
   await memory.load();
@@ -43,6 +44,7 @@ async function main(): Promise<void> {
   await show(memory, "users are getting rate limited, lots of 429s since the deploy");
 
   await rm(dbPath, { force: true });
+  await rm(`${dbPath}.cache.json`, { force: true });
 }
 
 async function show(memory: IncidentMemory, query: string): Promise<void> {

@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { clearDraftStore, decodeIssuePayload, encodeIssuePayload } from "./draftStore.js";
+import { alreadyFiledUrl, clearDraftStore, decodeIssuePayload, encodeIssuePayload, markFiled } from "./draftStore.js";
 
 const smallIssue = { title: "Checkout 500s", body: "short body", labels: ["bug"] };
 
@@ -31,5 +31,19 @@ describe("encodeIssuePayload / decodeIssuePayload", () => {
     expect(decodeIssuePayload(undefined)).toBeNull();
     expect(decodeIssuePayload("not json")).toBeNull();
     expect(decodeIssuePayload(JSON.stringify({ nonsense: true }))).toBeNull();
+  });
+});
+
+describe("filed-issue idempotency", () => {
+  test("a value is unfiled until marked, then returns the issue URL", () => {
+    const value = encodeIssuePayload({ repo: "acme/store", issue: smallIssue });
+    expect(alreadyFiledUrl(value)).toBeNull();
+    markFiled(value, "https://github.com/acme/store/issues/7");
+    expect(alreadyFiledUrl(value)).toBe("https://github.com/acme/store/issues/7");
+  });
+
+  test("undefined values are ignored", () => {
+    markFiled(undefined, "https://x");
+    expect(alreadyFiledUrl(undefined)).toBeNull();
   });
 });

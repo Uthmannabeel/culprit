@@ -24,14 +24,19 @@ what worked"*), and gets more confident with every incident it closes. That know
 which normally evaporates in a thread, is something Sentry/Rootly can't touch — because it
 lives in **your** Slack and GitHub history.
 
-The loop closes in Slack: when an incident is fixed, click **✅ Mark resolved**, tell
-Culprit *what actually fixed it*, and it writes that back to memory — so the calibrated
+The loop closes in Slack: when an incident is fixed, click **✅ Resolve & teach Culprit**,
+tell it *what actually fixed it*, and it writes that back to memory — so the calibrated
 confidence is **earned**, not guessed. Try it headless with `npm run verify:learning`.
 
 And it's **native to Slack's surfaces**: alongside the in-thread card, Culprit opens a
 live **Slack Canvas** for each incident (symptom → hypothesis → evidence → owner) and
 appends the resolution when you close it out — a durable, shareable record that doesn't
 scroll away. (Canvas is best-effort: needs `canvases:write`; triage works without it.)
+
+> **⚠️ The shipped memory is demo data.** `data/incidents.json` contains illustrative
+> seed incidents so recall is visible out of the box. For real use, **delete them** (or
+> point `INCIDENTS_DB_PATH` at your own store) — Culprit should only ever claim *your*
+> org's actual history as "we've seen this before".
 
 ---
 

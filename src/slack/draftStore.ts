@@ -52,7 +52,31 @@ export function decodeIssuePayload(value: string | undefined): IssuePayload | nu
   }
 }
 
-/** Test hook: reset the in-process store. */
+/**
+ * Idempotency for the Create-issue button: Slack can't disable a clicked
+ * button, so a double-click would file the issue twice. Track what's been
+ * filed (keyed by the button's raw value, unique per card) and short-circuit
+ * repeat clicks with the existing issue URL.
+ */
+const filed = new Map<string, string>();
+const MAX_FILED = 500;
+
+export function markFiled(value: string | undefined, issueUrl: string): void {
+  if (!value) return;
+  filed.set(value, issueUrl);
+  if (filed.size > MAX_FILED) {
+    const oldest = filed.keys().next().value;
+    if (oldest) filed.delete(oldest);
+  }
+}
+
+export function alreadyFiledUrl(value: string | undefined): string | null {
+  if (!value) return null;
+  return filed.get(value) ?? null;
+}
+
+/** Test hook: reset the in-process stores. */
 export function clearDraftStore(): void {
   stored.clear();
+  filed.clear();
 }

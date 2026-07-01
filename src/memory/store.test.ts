@@ -79,6 +79,26 @@ describe("IncidentMemory.recall (lexical fallback)", () => {
 });
 
 describe("IncidentMemory.remember", () => {
+  function fullRecord(id: string): IncidentRecord {
+    return {
+      id, symptom: `symptom ${id}`, rootCause: "cause", resolution: "fix", resolvedBy: "sam",
+      links: [], repo: null, createdAt: "2026-07-01T00:00:00Z", hypothesisWasCorrect: true, embedding: null,
+    };
+  }
+
+  test("concurrent remembers from separate instances don't lose updates", async () => {
+    const a = new IncidentMemory(makeConfig());
+    const b = new IncidentMemory(makeConfig());
+
+    await Promise.all([a.remember(fullRecord("race-x")), b.remember(fullRecord("race-y"))]);
+
+    const onDisk = JSON.parse(await readFile(dbPath, "utf8")) as IncidentRecord[];
+    const ids = onDisk.map((r) => r.id);
+    expect(ids).toContain("race-x");
+    expect(ids).toContain("race-y");
+    expect(onDisk).toHaveLength(SEED.length + 2);
+  });
+
   test("persists a new incident", async () => {
     const memory = new IncidentMemory(makeConfig());
     await memory.load();

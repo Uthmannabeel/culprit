@@ -22,5 +22,8 @@ Thumbs.db
 # test coverage
 coverage/
 
+# incident-memory embedding cache (derived, machine-local)
+data/*.cache.json
+
 # ECC (Everything Claude Code) agent harness — local dev aid, not a build artifact
 .claude/

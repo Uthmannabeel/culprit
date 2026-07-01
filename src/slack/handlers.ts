@@ -3,7 +3,7 @@ import { isIssueRepoAllowed, type AppConfig } from "../config.js";
 import { runTriage } from "../triage/brain.js";
 import { createGithubIssue } from "../github/issues.js";
 import { ACTION_CREATE_ISSUE, renderTriageBlocks } from "./blocks.js";
-import { decodeIssuePayload } from "./draftStore.js";
+import { alreadyFiledUrl, decodeIssuePayload, markFiled } from "./draftStore.js";
 import { IncidentMemory } from "../memory/store.js";
 import {
   ACTION_MARK_RESOLVED,
@@ -57,6 +57,10 @@ async function displayName(client: App["client"], userId: string | undefined): P
  * run a triage, and the button action that files the drafted issue.
  */
 export function registerHandlers(app: App, config: AppConfig): void {
+  // One triage per thread at a time — a second mention while one is running
+  // would silently kick off a duplicate investigation.
+  const inFlight = new Set<string>();
+
   const handleReport = async (args: {
     text: string;
     channel: string;
@@ -84,6 +88,13 @@ export function registerHandlers(app: App, config: AppConfig): void {
       });
       return;
     }
+
+    const flightKey = `${channel}:${threadTs}`;
+    if (inFlight.has(flightKey)) {
+      await client.chat.postMessage({ channel, thread_ts: threadTs, text: "⏳ Already investigating this one — hang tight." });
+      return;
+    }
+    inFlight.add(flightKey);
 
     const ack = await client.chat.postMessage({
       channel,
@@ -123,6 +134,8 @@ export function registerHandlers(app: App, config: AppConfig): void {
       const text = "⚠️ I couldn't complete triage on that one. Try again, or check the repo/token setup.";
       if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text });
       else await client.chat.postMessage({ channel, thread_ts: threadTs, text });
+    } finally {
+      inFlight.delete(flightKey);
     }
   };
 
@@ -168,7 +181,19 @@ export function registerHandlers(app: App, config: AppConfig): void {
     await ack();
     const channel = (body as { channel?: { id: string } }).channel?.id;
     const threadTs = (body as { message?: { ts: string } }).message?.ts;
-    const payload = decodeIssuePayload((action as { value?: string }).value);
+    const rawValue = (action as { value?: string }).value;
+
+    // Idempotency: Slack can't disable a clicked button — a second click should
+    // point at the existing issue, not file a duplicate.
+    const existing = alreadyFiledUrl(rawValue);
+    if (existing) {
+      if (channel) {
+        await client.chat.postMessage({ channel, thread_ts: threadTs, text: `☑️ Already filed: <${existing}|view the issue>.` });
+      }
+      return;
+    }
+
+    const payload = decodeIssuePayload(rawValue);
     if (!payload) {
       // Oversized drafts are held in-process; a restart between the verdict and
       // the click loses them. Tell the user how to recover instead of going silent.
@@ -197,6 +222,7 @@ export function registerHandlers(app: App, config: AppConfig): void {
 
     try {
       const created = await createGithubIssue(config, payload.repo, payload.issue);
+      markFiled(rawValue, created.htmlUrl);
       if (channel) {
         await client.chat.postMessage({
           channel,

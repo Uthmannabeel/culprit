@@ -139,7 +139,9 @@ export function renderTriageBlocks(
       },
       {
         type: "button",
-        text: { type: "plain_text", text: "✅ Mark resolved", emoji: true },
+        // "teach" makes it clear this feeds Culprit's memory — it does not
+        // close anything on GitHub.
+        text: { type: "plain_text", text: "✅ Resolve & teach Culprit", emoji: true },
         action_id: ACTION_MARK_RESOLVED,
         value: JSON.stringify(resolveCtx),
       },
@@ -150,7 +152,7 @@ export function renderTriageBlocks(
     elements: [
       {
         type: "mrkdwn",
-        text: "Triage proposes a hypothesis from real GitHub evidence — confirm before acting.",
+        text: "Culprit proposes a hypothesis from real evidence — the confidence % reflects how strong that evidence is. Confirm before acting.",
       },
     ],
   });

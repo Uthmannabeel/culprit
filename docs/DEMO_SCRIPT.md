@@ -7,7 +7,17 @@ evidence-backed verdict and a filed GitHub issue — and make the MCP story expl
 `GITHUB_DEFAULT_REPO` pointing at a repo that has a real, recent breaking change
 (seed one if needed — e.g. a commit/PR that removes an env-var read). Pick the brain
 with `LLM_PROVIDER` (`gemini` for the free-tier path, `anthropic` for Claude+MCP).
-Sanity-check evidence access first with `npm run verify:evidence`.
+
+**Pre-demo checklist (each of these fails *silently* if skipped):**
+
+- [ ] **Reinstall the Slack app** after any manifest/scope change — the canvas needs
+      `canvases:write` + `files:read`; without a reinstall the card just shows no canvas link.
+- [ ] **`/invite @Culprit`** to the demo channel — mentions in channels it's not a member
+      of are never delivered (no error, just silence).
+- [ ] **Hotspot / home Wi-Fi** — corporate networks drop Slack's Socket Mode WebSocket.
+- [ ] `npm run verify:evidence` and `npm run verify:memory` both green.
+- [ ] `data/incidents.json` still has the seed incidents — the "we've seen this before"
+      beat depends on them.
 
 ---
 
@@ -42,8 +52,8 @@ a clean, pre-written issue with title, body, and labels.
 > "From a one-line Slack message to a filed, triaged issue — without leaving the thread."
 
 ### 1:55 — Close the loop, and it gets smarter (30s)
-Click **✅ Mark resolved**. A modal asks *what actually fixed it* and whether the
-hypothesis was right. Submit → Culprit replies **🧠 Logged to memory** and appends a
+Click **✅ Resolve & teach Culprit**. A modal asks *what actually fixed it* and whether
+the hypothesis was right. Submit → Culprit replies **🧠 Logged to memory** and appends a
 **✅ Resolved** section to the incident canvas.
 > "That fix is now part of the org's memory. The next time this rhymes, Culprit recalls
 > it — it compounds with every incident."
