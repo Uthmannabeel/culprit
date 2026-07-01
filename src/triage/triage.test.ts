@@ -49,7 +49,7 @@ describe("renderTriageBlocks", () => {
     expect(payload.issue.title).toBe(sample.draftIssue.title);
   });
 
-  test("renders a 'seen before' panel when prior incidents exist", () => {
+  test("renders a prior-incident panel with categorical similarity (no percentages)", () => {
     const withPrior = renderTriageBlocks(
       {
         ...sample,
@@ -60,14 +60,22 @@ describe("renderTriageBlocks", () => {
       "o/r",
     );
     const text = JSON.stringify(withPrior);
-    expect(text).toContain("seen this before");
-    expect(text).toContain("77% match");
+    expect(text).toContain("Prior incident match");
+    expect(text).toContain("Strong match");
     expect(text).toContain("dana");
+    expect(text).not.toContain("77%"); // categorical words, not fake precision
   });
 
-  test("omits the 'seen before' panel when there are no prior incidents", () => {
+  test("omits the prior-incident panel when there are none", () => {
     const text = JSON.stringify(renderTriageBlocks(sample, "o/r"));
-    expect(text).not.toContain("seen this before");
+    expect(text).not.toContain("Prior incident match");
+  });
+
+  test("expresses confidence as a word, never a bar or percentage", () => {
+    const text = JSON.stringify(renderTriageBlocks(sample, "o/r"));
+    expect(text).toContain("*Confidence:*\\nMedium"); // sample.confidence = 72
+    expect(text).not.toContain("█");
+    expect(text).not.toContain("72%");
   });
 
   test("keeps every button value under Slack's 2000-char limit even for huge drafts", () => {
@@ -81,10 +89,15 @@ describe("renderTriageBlocks", () => {
     }
   });
 
-  test("escapes angle brackets in untrusted text", () => {
-    const evil = renderTriageBlocks({ ...sample, summary: "<script>alert(1)</script>" }, "o/r");
-    const section = evil[1] as { text: { text: string } };
-    expect(section.text.text).not.toContain("<script>");
-    expect(section.text.text).toContain("&lt;script&gt;");
+  test("escapes angle brackets in untrusted mrkdwn text", () => {
+    const evil = renderTriageBlocks(
+      { ...sample, rootCauseHypothesis: "<script>alert(1)</script> in checkout" },
+      "o/r",
+    );
+    const cause = evil.find(
+      (b) => b.type === "section" && "text" in b && (b as { text: { text: string } }).text.text.includes("Likely root cause"),
+    ) as { text: { text: string } };
+    expect(cause.text.text).not.toContain("<script>");
+    expect(cause.text.text).toContain("&lt;script&gt;");
   });
 });

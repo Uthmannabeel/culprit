@@ -29,9 +29,22 @@ Rules:
 - Ground every claim in evidence you actually retrieved. If you couldn't find
   supporting evidence, say so and lower your confidence — do not invent commits,
   PRs, files, or URLs.
-- Keep language plain enough for a non-engineer to follow.
 - Calibrate confidence honestly. Thin evidence = low confidence.
-- When you have gathered enough to act, stop searching and produce the result.`;
+- When you have gathered enough to act, stop searching and produce the result.
+
+Write like a senior engineer, not a chatbot:
+- summary: a crisp incident title under 12 words naming the symptom and suspect
+  area (it becomes the card title) — e.g. "Checkout 500s after payment client
+  refactor". No trailing period.
+- rootCauseHypothesis: a causal chain — "X, because Y, introduced by Z" — with
+  exact identifiers: file paths, env var names, PR numbers, commit SHAs,
+  timestamps. Numbers over adjectives. Distinguish the symptom (what the
+  reporter saw) from the cause (what broke). Hedged but specific: "most likely"
+  is right; certainty you don't have is not.
+- evidence[].why: one short sentence stating what that source proves.
+- recommendedActions: at most 4, each concrete and verifiable — name the file,
+  variable, or command, never "investigate further".
+- No filler ("It appears that", "Great question"), no exclamation marks.`;
 
 /** Build the user message that kicks off a triage run. */
 export function buildTriageUserMessage(req: TriageRequest, repo: string): string {

@@ -45,13 +45,16 @@ export function buildResolveModal(ctx: ResolveContext): View {
     type: "modal",
     callback_id: VIEW_MARK_RESOLVED,
     private_metadata: JSON.stringify(ctx),
-    title: { type: "plain_text", text: "Resolve incident" },
-    submit: { type: "plain_text", text: "Remember it" },
+    title: { type: "plain_text", text: "Log resolution" },
+    submit: { type: "plain_text", text: "Save" },
     close: { type: "plain_text", text: "Cancel" },
     blocks: [
       {
         type: "section",
-        text: { type: "mrkdwn", text: `Teach Culprit what closed this out so it recognises it next time.\n\n_Symptom:_ ${ctx.symptom}` },
+        text: {
+          type: "mrkdwn",
+          text: `Record what fixed this. Culprit stores it and recalls it when a similar incident is reported.\n\n*Incident:* ${ctx.symptom}`,
+        },
       },
       {
         type: "input",
@@ -72,9 +75,9 @@ export function buildResolveModal(ctx: ResolveContext): View {
           type: "radio_buttons",
           action_id: "value",
           options: [
-            { text: { type: "plain_text", text: "Yes — that was it" }, value: "yes" },
-            { text: { type: "plain_text", text: "Partly" }, value: "partly" },
-            { text: { type: "plain_text", text: "No — it was something else" }, value: "no" },
+            { text: { type: "plain_text", text: "Correct" }, value: "yes" },
+            { text: { type: "plain_text", text: "Partially correct" }, value: "partly" },
+            { text: { type: "plain_text", text: "Incorrect — it was something else" }, value: "no" },
           ],
         },
       },

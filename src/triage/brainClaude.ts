@@ -5,6 +5,7 @@ import { IncidentMemory } from "../memory/store.js";
 import type { RecallHit } from "../memory/types.js";
 import { TRIAGE_SYSTEM_PROMPT, buildTriageUserMessage } from "./prompt.js";
 import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, formatRecallResult, toPriorIncidents } from "./recall.js";
+import { describeToolCall } from "./progress.js";
 import { TriageResultSchema, type ProgressFn, type TriageRequest, type TriageResult } from "./types.js";
 
 export type { ProgressFn } from "./types.js";
@@ -143,12 +144,12 @@ export async function runTriageClaude(
       toolUses.map(async (call): Promise<Anthropic.ToolResultBlockParam> => {
         const input = (call.input as Record<string, unknown>) ?? {};
         if (call.name === RECALL_TOOL_NAME) {
-          await onProgress?.("Recalling past incidents");
+          await onProgress?.(describeToolCall(call.name));
           const hits = await memory.recall(String(input.query ?? ""));
           collectedHits.push(...hits);
           return { type: "tool_result", tool_use_id: call.id, content: truncate(formatRecallResult(hits), 8000) };
         }
-        await onProgress?.(`Checking GitHub: ${call.name}`);
+        await onProgress?.(describeToolCall(call.name));
         const { text, isError } = await bridge.callTool(call.name, input);
         return { type: "tool_result", tool_use_id: call.id, content: truncate(text, 8000), is_error: isError };
       }),

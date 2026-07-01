@@ -1,6 +1,9 @@
 import type { WebClient } from "@slack/web-api";
 import type { IncidentRecord } from "../memory/types.js";
 import type { TriageResult } from "../triage/types.js";
+import { SEVERITY_LABEL, confidenceLabel, mdSafe, safeHttpUrl, similarityLabel } from "./format.js";
+
+export { mdSafe, safeHttpUrl } from "./format.js";
 
 /**
  * The living incident canvas. Culprit opens a Slack Canvas when it posts a
@@ -10,41 +13,11 @@ import type { TriageResult } from "../triage/types.js";
  * canvases, triage still works — the canvas is a bonus, never a blocker.
  */
 
-const SEVERITY: Record<TriageResult["severity"], string> = {
-  sev1: "🔴 SEV1 — critical",
-  sev2: "🟠 SEV2 — major",
-  sev3: "🟡 SEV3 — minor",
-  unknown: "⚪ unclear",
-};
-
 /**
- * Neutralise untrusted text before embedding it in canvas markdown. Reports,
- * evidence and recalled memory are user/model-controlled — without this a
- * reporter could inject fake links, headings, or a bogus "✅ Resolved" section
- * into a bot-authored, channel-shared doc (content spoofing / phishing).
+ * Markdown for a fresh incident canvas, built from the verdict. Pure. Mirrors
+ * the card's design system: severity circle is the only emoji, categorical
+ * confidence/similarity, numbered linked evidence, provenance at the bottom.
  */
-export function mdSafe(text: string): string {
-  // Collapse newlines first so untrusted text can never start a line (which
-  // neutralises heading/list/blockquote markers), then escape the inline-active
-  // characters that could still inject a link, code span, emphasis, or table.
-  return text
-    .replace(/[\r\n]+/g, " ")
-    .replace(/([`[\]<>|*])/g, "\\$1")
-    .trim();
-}
-
-/** Return the URL only if it's a well-formed http(s) link, else null. */
-export function safeHttpUrl(url: string | null | undefined): string | null {
-  if (!url) return null;
-  try {
-    const u = new URL(url);
-    return u.protocol === "http:" || u.protocol === "https:" ? url : null;
-  } catch {
-    return null;
-  }
-}
-
-/** Markdown for a fresh incident canvas, built from the verdict. Pure. */
 export function buildIncidentCanvasMarkdown(
   result: TriageResult,
   repo: string,
@@ -52,67 +25,72 @@ export function buildIncidentCanvasMarkdown(
   reportedBy?: string,
 ): string {
   const lines: string[] = [];
-  lines.push(`# 🔍 Incident: ${mdSafe(result.summary)}`);
+  lines.push(`# Incident: ${mdSafe(result.summary)}`);
   lines.push("");
-  lines.push(`**Status:** 🟠 Investigating`);
-  lines.push(`**Severity:** ${SEVERITY[result.severity]}`);
+  lines.push(`**Status:** Investigating`);
+  lines.push(`**Severity:** ${SEVERITY_LABEL[result.severity]}`);
   lines.push(`**Repository:** ${mdSafe(repo)}`);
   lines.push(`**Reported:** ${mdSafe(report)}${reportedBy ? ` (by ${mdSafe(reportedBy)})` : ""}`);
   lines.push("");
-  lines.push(`## Likely cause (hypothesis · ${Math.round(result.confidence)}% confidence)`);
+  lines.push(`## Likely root cause`);
   lines.push(mdSafe(result.rootCauseHypothesis));
+  lines.push("");
+  lines.push(`**Confidence:** ${confidenceLabel(result.confidence)}`);
 
   if (result.priorIncidents.length > 0) {
     lines.push("");
-    lines.push("## 🧠 We've seen this before");
+    lines.push("## Prior incidents");
     for (const p of result.priorIncidents.slice(0, 3)) {
-      const who = p.resolvedBy ? ` — fixed by ${mdSafe(p.resolvedBy)}` : "";
-      const pct = `${Math.round(p.similarity * 100)}%`;
-      lines.push(`- **${pct} match** ${mdSafe(p.symptom)}${who}${p.resolution ? `\n  _Last time:_ ${mdSafe(p.resolution)}` : ""}`);
+      const link = safeHttpUrl(p.url);
+      const ref = link ? ` ([details](${link}))` : "";
+      const who = p.resolvedBy ? ` Resolved by ${mdSafe(p.resolvedBy)}.` : "";
+      const fix = p.resolution ? ` Fix at the time: ${mdSafe(p.resolution)}` : "";
+      lines.push(`- **${similarityLabel(p.similarity)}** — ${mdSafe(p.symptom)}${ref}.${who}${fix}`);
     }
   }
 
   if (result.evidence.length > 0) {
     lines.push("");
     lines.push("## Evidence");
-    for (const e of result.evidence.slice(0, 8)) {
+    result.evidence.slice(0, 8).forEach((e, i) => {
       const url = safeHttpUrl(e.url);
       const title = url ? `[${mdSafe(e.title)}](${url})` : mdSafe(e.title);
-      lines.push(`- \`${mdSafe(e.kind)}\` ${title} — ${mdSafe(e.why)}`);
-    }
+      lines.push(`${i + 1}. ${title} — ${mdSafe(e.why)}`);
+    });
   }
 
   lines.push("");
-  lines.push(`## Suspected owner`);
-  lines.push(result.suspectedOwner ? `@${mdSafe(result.suspectedOwner)}` : "_not determined_");
+  lines.push(`## Suggested owner`);
+  lines.push(result.suspectedOwner ? `${mdSafe(result.suspectedOwner)}` : "_Not determined._");
 
   if (result.recommendedActions.length > 0) {
     lines.push("");
-    lines.push("## Recommended next steps");
-    for (const a of result.recommendedActions) lines.push(`- [ ] ${mdSafe(a)}`);
+    lines.push("## Suggested next steps");
+    for (const a of result.recommendedActions.slice(0, 4)) lines.push(`- [ ] ${mdSafe(a)}`);
   }
 
   lines.push("");
   lines.push("---");
-  lines.push("_Culprit — a hypothesis backed by evidence. Confirm before acting._");
+  lines.push("_Culprit · AI-generated hypothesis, not a verdict — every claim links to its source._");
   return lines.join("\n");
 }
 
 /** Markdown appended to the canvas when the incident is resolved. Pure. */
 export function buildResolutionCanvasMarkdown(record: IncidentRecord): string {
-  const verdict =
+  const outcome =
     record.hypothesisWasCorrect === true
-      ? "✅ hypothesis was correct"
+      ? "correct"
       : record.hypothesisWasCorrect === false
-        ? "❌ hypothesis was wrong"
-        : "➖ hypothesis was partly right";
+        ? "incorrect"
+        : "partially correct";
   const lines: string[] = [
     "",
-    "## ✅ Resolved",
+    "## Resolution",
     `**What fixed it:** ${record.resolution ? mdSafe(record.resolution) : "(not recorded)"}`,
-    `**Fixed by:** ${record.resolvedBy ? mdSafe(record.resolvedBy) : "unknown"}`,
-    `**Outcome:** ${verdict}`,
-    "_Recorded to Culprit's memory — it will recall this next time._",
+    `**Resolved by:** ${record.resolvedBy ? mdSafe(record.resolvedBy) : "unknown"}`,
+    `**Hypothesis was:** ${outcome}`,
+    "",
+    "_Recorded to Culprit's memory — a similar incident will recall this resolution._",
   ];
   return lines.join("\n");
 }

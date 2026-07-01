@@ -15,6 +15,7 @@ import { IncidentMemory } from "../memory/store.js";
 import type { RecallHit } from "../memory/types.js";
 import type { ProgressFn } from "./types.js";
 import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, formatRecallResult, toPriorIncidents } from "./recall.js";
+import { describeToolCall } from "./progress.js";
 
 /** Read-only GitHub evidence tools, with Gemini-friendly schemas. */
 const EVIDENCE_TOOLS: FunctionDeclaration[] = [
@@ -234,7 +235,7 @@ export async function runTriageGemini(
     // (Promise.all preserves order, so responses stay aligned with the calls).
     const responseParts: Part[] = await Promise.all(
       calls.map(async (call) => {
-        await onProgress?.(call.name === RECALL_TOOL_NAME ? "Recalling past incidents" : `Checking GitHub: ${call.name}`);
+        await onProgress?.(describeToolCall(call.name));
         const text = await runEvidenceTool(
           config,
           repo,

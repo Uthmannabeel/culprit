@@ -15,6 +15,7 @@
     "verify:evidence": "tsx src/demo/verifyEvidence.ts",
     "verify:memory": "tsx src/demo/verifyMemory.ts",
     "verify:learning": "tsx src/demo/verifyLearning.ts",
+    "preview:card": "tsx src/demo/previewCard.ts",
     "list:models": "tsx src/demo/listModels.ts",
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",

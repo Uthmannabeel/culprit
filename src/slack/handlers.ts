@@ -91,7 +91,7 @@ export function registerHandlers(app: App, config: AppConfig): void {
 
     const flightKey = `${channel}:${threadTs}`;
     if (inFlight.has(flightKey)) {
-      await client.chat.postMessage({ channel, thread_ts: threadTs, text: "⏳ Already investigating this one — hang tight." });
+      await client.chat.postMessage({ channel, thread_ts: threadTs, text: "Already investigating — updates will land in this thread." });
       return;
     }
     inFlight.add(flightKey);
@@ -99,7 +99,7 @@ export function registerHandlers(app: App, config: AppConfig): void {
     const ack = await client.chat.postMessage({
       channel,
       thread_ts: threadTs,
-      text: "🔍 Investigating — gathering evidence from GitHub…",
+      text: `Investigating \`${repo}\` — checking past incidents and recent changes…`,
     });
 
     try {
@@ -108,7 +108,7 @@ export function registerHandlers(app: App, config: AppConfig): void {
         config,
         { report, repo, reportedBy: reporter },
         async (note) => {
-          if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text: `🔍 ${note}…` });
+          if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text: `${note}…` });
         },
       );
       const canvas = config.CANVAS_ENABLED
@@ -158,7 +158,7 @@ export function registerHandlers(app: App, config: AppConfig): void {
     await client.chat.postMessage({
       channel: thread.channel_id,
       thread_ts: thread.thread_ts,
-      text: "👋 Tell me what's broken — e.g. `checkout is throwing 500s repo:owner/name` — and I'll investigate: past incidents, recent changes, likely owner, and a draft issue.",
+      text: "Tell me what's broken — e.g. `checkout is throwing 500s repo:owner/name` — and I'll investigate: past incidents, recent changes, likely owner, and a draft issue.",
     });
   });
 
@@ -188,7 +188,7 @@ export function registerHandlers(app: App, config: AppConfig): void {
     const existing = alreadyFiledUrl(rawValue);
     if (existing) {
       if (channel) {
-        await client.chat.postMessage({ channel, thread_ts: threadTs, text: `☑️ Already filed: <${existing}|view the issue>.` });
+        await client.chat.postMessage({ channel, thread_ts: threadTs, text: `Already filed — <${existing}|view the issue>.` });
       }
       return;
     }
@@ -227,7 +227,7 @@ export function registerHandlers(app: App, config: AppConfig): void {
         await client.chat.postMessage({
           channel,
           thread_ts: threadTs,
-          text: `✅ Filed <${created.htmlUrl}|#${created.number}> in \`${payload.repo}\`.`,
+          text: `Issue <${created.htmlUrl}|#${created.number}> filed in \`${payload.repo}\`.`,
         });
       }
     } catch (err) {
@@ -265,11 +265,11 @@ export function registerHandlers(app: App, config: AppConfig): void {
         await appendResolution(client, ctx.canvasId, buildResolutionCanvasMarkdown(record));
       }
       if (ctx.channel) {
-        const fix = record.resolution ? `: _${record.resolution}_` : ".";
+        const fix = record.resolution ? ` — "${record.resolution}"` : "";
         await client.chat.postMessage({
           channel: ctx.channel,
           thread_ts: ctx.threadTs ?? undefined,
-          text: `🧠 Logged to memory${fix}\nNext time something like *${ctx.symptom}* is reported, Culprit will recall this.`,
+          text: `Resolution logged${fix}. Culprit will recall this if a similar incident is reported.`,
         });
       }
     } catch (err) {

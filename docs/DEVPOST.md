@@ -21,8 +21,10 @@ You report an incident in a Slack channel in plain language — *"checkout is th
    commits, issues, and files touching the affected area — and confirms or rules out the
    recalled pattern against what actually changed.
 3. Forms the single most likely **root-cause hypothesis** and names the **suspected owner**.
-4. Posts a **Block Kit verdict card** in-thread: a *"we've seen this before"* panel,
-   hypothesis, calibrated confidence, severity, and **evidence that links back to real sources**.
+4. Posts a **Block Kit verdict card** in-thread: a *prior incident match* panel,
+   the causal hypothesis, categorical confidence, severity, and **numbered evidence that
+   links back to real sources** — designed to the standard of incident.io and Datadog's
+   Slack surfaces, not a chatbot wall of emoji.
 5. Offers a **one-click "Create GitHub issue"** button that files a pre-drafted,
    labelled issue via the GitHub REST API.
 
@@ -49,7 +51,7 @@ in your workspace.
   recalled by semantic similarity, with a lexical fallback so recall never hard-fails.
   A recall feeds the loop as first-class evidence and a reliable "we've seen this before"
   panel — this is the compounding asset that sets Culprit apart from one-shot triagers.
-- **The learning loop:** a "✅ Resolve & teach Culprit" button opens a modal that captures
+- **The learning loop:** a "Log resolution" button opens a modal that captures
   *what actually fixed it* and whether the hypothesis was right, then writes it back to memory.
   Confidence is therefore **earned** — the next matching incident recalls a real outcome
   your team produced, not a guess.

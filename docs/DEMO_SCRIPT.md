@@ -35,26 +35,27 @@ multi-signal evidence** (merged PRs, commits, issues, code), not guessing.
 
 ### 0:45 — The verdict (45s)
 The card lands. Walk through it:
-- **🧠 We've seen this before** — a similar past incident, what fixed it, and who. This
+- **Prior incident match** — a similar past incident, what fixed it, and who. This
   is the wedge: *"Culprit recognised this matches an incident dana resolved in April."*
-- **Likely cause (hypothesis)** — names the suspect change.
-- **Evidence** — each line links to a **real** commit / PR / file it pulled.
-- **Suspected owner** — from commit/PR authorship.
-- **Confidence bar** — higher *because* memory corroborates the code.
-- **📄 Live incident canvas** — click it: Culprit has opened a Slack Canvas with the whole
-  incident (symptom, hypothesis, evidence, owner). It's a durable doc, not a card that scrolls away.
+- **Likely root cause** — a causal chain with exact identifiers (PR number, env var, file).
+- **Evidence** — numbered, each line linking to a **real** commit / PR / file it pulled.
+- **Suggested owner** — from commit/PR authorship.
+- **Confidence: High** — categorical, not a fake percentage — and high *because* memory
+  corroborates the code.
+- **Incident canvas** (footer link) — click it: Culprit opened a Slack Canvas with the whole
+  incident (symptom, hypothesis, evidence, owner). A durable doc, not a card that scrolls away.
 > "Notice it says *hypothesis* — every claim links to a source it actually found, and it
 > remembers what your team already solved."
 
 ### 1:30 — One-click issue (25s)
-Click **📝 Create GitHub issue**. Culprit posts **✅ Filed #123**. Open the link —
+Click **Create GitHub issue**. Culprit posts **Issue #123 filed**. Open the link —
 a clean, pre-written issue with title, body, and labels.
 > "From a one-line Slack message to a filed, triaged issue — without leaving the thread."
 
 ### 1:55 — Close the loop, and it gets smarter (30s)
-Click **✅ Resolve & teach Culprit**. A modal asks *what actually fixed it* and whether
-the hypothesis was right. Submit → Culprit replies **🧠 Logged to memory** and appends a
-**✅ Resolved** section to the incident canvas.
+Click **Log resolution**. A modal asks *what actually fixed it* and whether the
+hypothesis was right. Submit → Culprit replies **Resolution logged** and appends a
+**Resolution** section to the incident canvas.
 > "That fix is now part of the org's memory. The next time this rhymes, Culprit recalls
 > it — it compounds with every incident."
 

@@ -1,27 +1,28 @@
 import type { KnownBlock } from "@slack/types";
 import type { TriageResult } from "../triage/types.js";
 import { ACTION_MARK_RESOLVED, type ResolveContext } from "./resolve.js";
-import { safeHttpUrl } from "./canvas.js";
+import { SEVERITY_LABEL, confidenceLabel, safeHttpUrl, similarityLabel } from "./format.js";
 import { encodeIssuePayload } from "./draftStore.js";
+
+export { confidenceLabel, similarityLabel } from "./format.js";
 
 /** Action IDs for interactive components. */
 export const ACTION_CREATE_ISSUE = "triage_create_issue";
 
-const SEVERITY_LABEL: Record<TriageResult["severity"], string> = {
-  sev1: "🔴 SEV1 — critical",
-  sev2: "🟠 SEV2 — major",
-  sev3: "🟡 SEV3 — minor",
-  unknown: "⚪ severity unclear",
-};
-
-function confidenceBar(confidence: number): string {
-  const filled = Math.round(Math.max(0, Math.min(100, confidence)) / 10);
-  return `${"█".repeat(filled)}${"░".repeat(10 - filled)} ${Math.round(confidence)}%`;
-}
+/**
+ * Verdict-card design system — benchmarked against incident.io, Rootly,
+ * PagerDuty, Datadog Bits AI, and Slack's own Block Kit guidance:
+ * - One colored circle for severity (the industry-standard signal) — no other
+ *   decorative emoji anywhere in the card.
+ * - Confidence and similarity as categorical WORDS, never percentage bars.
+ * - Labels bold, values plain. Evidence numbered and linked (verifiable <30s).
+ * - Max two buttons, plain verb labels. Provenance lives in the context footer.
+ */
 
 /**
- * Render a triage verdict as Slack Block Kit. The draftIssue is stashed in the
- * button value so the action handler can file it without re-running analysis.
+ * Render a triage verdict as Slack Block Kit. Fixed anatomy every time —
+ * title, facts, cause, prior incidents, evidence, next steps, actions,
+ * provenance — because consistency of structure is itself a trust signal.
  */
 export function renderTriageBlocks(
   result: TriageResult,
@@ -29,93 +30,75 @@ export function renderTriageBlocks(
   report?: string,
   canvas?: { id: string | null; url: string | null },
 ): KnownBlock[] {
-  const blocks: KnownBlock[] = [
-    {
-      type: "header",
-      text: { type: "plain_text", text: "🔍 Culprit — triage verdict", emoji: true },
-    },
-    {
-      type: "section",
-      text: { type: "mrkdwn", text: `*${escape(result.summary)}*` },
-    },
-    {
-      type: "section",
-      fields: [
-        { type: "mrkdwn", text: `*Severity*\n${SEVERITY_LABEL[result.severity]}` },
-        { type: "mrkdwn", text: `*Confidence*\n\`${confidenceBar(result.confidence)}\`` },
-        { type: "mrkdwn", text: `*Repository*\n\`${escape(repo)}\`` },
-        {
-          type: "mrkdwn",
-          text: `*Suspected owner*\n${result.suspectedOwner ? escape(result.suspectedOwner) : "_not determined_"}`,
-        },
-      ],
-    },
-    {
-      type: "section",
-      text: { type: "mrkdwn", text: `*Likely cause (hypothesis)*\n${escape(result.rootCauseHypothesis)}` },
-    },
-  ];
+  const blocks: KnownBlock[] = [];
+
+  // The title is the incident, not the bot. Plain text — no injection surface.
+  blocks.push({
+    type: "header",
+    text: { type: "plain_text", text: result.summary.slice(0, 150), emoji: true },
+  });
+
+  blocks.push({
+    type: "section",
+    fields: [
+      { type: "mrkdwn", text: `*Severity:*\n${SEVERITY_LABEL[result.severity]}` },
+      { type: "mrkdwn", text: `*Confidence:*\n${confidenceLabel(result.confidence)}` },
+      { type: "mrkdwn", text: `*Repository:*\n\`${escape(repo)}\`` },
+      {
+        type: "mrkdwn",
+        text: `*Suggested owner:*\n${result.suspectedOwner ? escape(result.suspectedOwner) : "not determined"}`,
+      },
+    ],
+  });
+
+  blocks.push({
+    type: "section",
+    text: { type: "mrkdwn", text: `*Likely root cause*\n${escape(result.rootCauseHypothesis)}` },
+  });
 
   if (result.priorIncidents.length > 0) {
-    blocks.push({ type: "divider" });
+    const lines = result.priorIncidents.slice(0, 2).map((p) => {
+      const link = safeHttpUrl(p.url);
+      const ref = link ? ` (<${link}|details>)` : "";
+      const who = p.resolvedBy ? ` Resolved by ${escape(p.resolvedBy)}.` : "";
+      const fix = p.resolution ? ` Fix at the time: ${escape(p.resolution)}` : "";
+      return `*${similarityLabel(p.similarity)}* — ${escape(p.symptom)}${ref}.${who}${fix}`;
+    });
     blocks.push({
       type: "section",
-      text: { type: "mrkdwn", text: "🧠 *We've seen this before*" },
+      text: { type: "mrkdwn", text: `*Prior incident match*\n${lines.join("\n")}` },
     });
-    for (const p of result.priorIncidents.slice(0, 3)) {
-      const who = p.resolvedBy ? ` — fixed by *${escape(p.resolvedBy)}*` : "";
-      const safeUrl = safeHttpUrl(p.url);
-      const link = safeUrl ? ` <${safeUrl}|details>` : "";
-      const match = `${Math.round(p.similarity * 100)}% match`;
-      const fix = p.resolution ? `\n   _Last time:_ ${escape(p.resolution)}` : "";
-      blocks.push({
-        type: "section",
-        text: { type: "mrkdwn", text: `• \`${match}\` ${escape(p.symptom)}${who}${link}${fix}` },
-      });
-    }
   }
 
   if (result.evidence.length > 0) {
-    blocks.push({ type: "divider" });
-    blocks.push({ type: "section", text: { type: "mrkdwn", text: "*Evidence*" } });
-    for (const e of result.evidence.slice(0, 8)) {
-      const safeUrl = safeHttpUrl(e.url);
-      const link = safeUrl ? `<${safeUrl}|${escape(e.title)}>` : escape(e.title);
-      blocks.push({
-        type: "section",
-        text: { type: "mrkdwn", text: `• \`${e.kind}\` ${link}\n   ${escape(e.why)}` },
-      });
-    }
+    const lines = result.evidence.slice(0, 6).map((e, i) => {
+      const url = safeHttpUrl(e.url);
+      const title = url ? `<${url}|${escape(e.title)}>` : escape(e.title);
+      return `${i + 1}. ${title} — ${escape(e.why.slice(0, 200))}`;
+    });
+    blocks.push({
+      type: "section",
+      text: { type: "mrkdwn", text: `*Evidence*\n${lines.join("\n")}` },
+    });
   }
 
   if (result.recommendedActions.length > 0) {
-    blocks.push({ type: "divider" });
+    const lines = result.recommendedActions.slice(0, 4).map((a, i) => `${i + 1}. ${escape(a)}`);
     blocks.push({
       type: "section",
-      text: {
-        type: "mrkdwn",
-        text: `*Recommended next steps*\n${result.recommendedActions.map((a) => `• ${escape(a)}`).join("\n")}`,
-      },
+      text: { type: "mrkdwn", text: `*Suggested next steps*\n${lines.join("\n")}` },
     });
   }
 
   blocks.push({ type: "divider" });
+
+  const labels = result.draftIssue.labels.length
+    ? ` · ${result.draftIssue.labels.map((l) => `\`${escape(l)}\``).join(" ")}`
+    : "";
   blocks.push({
     type: "section",
-    text: {
-      type: "mrkdwn",
-      text: `*Draft issue:* ${escape(result.draftIssue.title)}\n_Labels: ${
-        result.draftIssue.labels.length ? result.draftIssue.labels.map((l) => `\`${escape(l)}\``).join(" ") : "none"
-      }_`,
-    },
+    text: { type: "mrkdwn", text: `*Draft issue:* ${escape(result.draftIssue.title)}${labels}` },
   });
-  if (canvas?.url) {
-    blocks.push({ type: "divider" });
-    blocks.push({
-      type: "section",
-      text: { type: "mrkdwn", text: `📄 <${canvas.url}|Live incident canvas> — updates as this resolves` },
-    });
-  }
 
   const resolveCtx: ResolveContext = {
     symptom: (report ?? result.summary).slice(0, 300),
@@ -133,26 +116,26 @@ export function renderTriageBlocks(
       {
         type: "button",
         style: "primary",
-        text: { type: "plain_text", text: "📝 Create GitHub issue", emoji: true },
+        text: { type: "plain_text", text: "Create GitHub issue" },
         action_id: ACTION_CREATE_ISSUE,
         value: encodeIssuePayload({ repo, issue: result.draftIssue }),
       },
       {
         type: "button",
-        // "teach" makes it clear this feeds Culprit's memory — it does not
-        // close anything on GitHub.
-        text: { type: "plain_text", text: "✅ Resolve & teach Culprit", emoji: true },
+        text: { type: "plain_text", text: "Log resolution" },
         action_id: ACTION_MARK_RESOLVED,
         value: JSON.stringify(resolveCtx),
       },
     ],
   });
+
+  const canvasLink = canvas?.url ? ` · <${canvas.url}|Incident canvas>` : "";
   blocks.push({
     type: "context",
     elements: [
       {
         type: "mrkdwn",
-        text: "Culprit proposes a hypothesis from real evidence — the confidence % reflects how strong that evidence is. Confirm before acting.",
+        text: `Culprit · AI-generated hypothesis, not a verdict — every claim links to its source · Verify before acting${canvasLink}`,
       },
     ],
   });

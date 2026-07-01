@@ -20,16 +20,17 @@ const result: TriageResult = {
 describe("buildIncidentCanvasMarkdown", () => {
   const md = buildIncidentCanvasMarkdown(result, "acme/store", "checkout is 500ing", "nabeel");
 
-  test("includes a title, status, and confidence", () => {
-    expect(md).toContain("# 🔍 Incident: Checkout returns 500 after payment refactor");
-    expect(md).toContain("**Status:** 🟠 Investigating");
-    expect(md).toContain("91% confidence");
+  test("includes a title, status, and categorical confidence", () => {
+    expect(md).toContain("# Incident: Checkout returns 500 after payment refactor");
+    expect(md).toContain("**Status:** Investigating");
+    expect(md).toContain("**Confidence:** High"); // 91 → High, no percentage
+    expect(md).not.toContain("91%");
   });
 
   test("includes the prior-incident and evidence sections", () => {
-    expect(md).toContain("🧠 We've seen this before");
-    expect(md).toContain("77% match");
-    expect(md).toContain("fixed by dana");
+    expect(md).toContain("## Prior incidents");
+    expect(md).toContain("**Strong match**");
+    expect(md).toContain("Resolved by dana");
     expect(md).toContain("[Refactor payment client #1](https://x/pr/1)");
   });
 
@@ -63,16 +64,16 @@ describe("safeHttpUrl", () => {
 });
 
 describe("canvas markdown escapes untrusted incident text", () => {
-  test("a report with markdown can't inject links or a fake resolved section", () => {
+  test("a report with markdown can't inject links or a fake resolution section", () => {
     const md = buildIncidentCanvasMarkdown(
       { ...result, summary: "[pwn](http://evil.com)" },
       "acme/store",
-      "## ✅ Resolved by me",
+      "## Resolution by me",
       "nabeel",
     );
     expect(md).not.toContain("[pwn](http://evil.com)");
-    // the injected heading must be neutralised, not a real "## ✅ Resolved" line
-    expect(md).not.toMatch(/\n## ✅ Resolved by me/);
+    // the injected heading must be neutralised, not a real "## Resolution" line
+    expect(md).not.toMatch(/\n## Resolution by me/);
   });
 });
 
@@ -84,14 +85,14 @@ describe("buildResolutionCanvasMarkdown", () => {
 
   test("shows the fix, who, and a correct-hypothesis outcome", () => {
     const md = buildResolutionCanvasMarkdown(base);
-    expect(md).toContain("## ✅ Resolved");
+    expect(md).toContain("## Resolution");
     expect(md).toContain("**What fixed it:** restored the env var");
-    expect(md).toContain("**Fixed by:** dana");
-    expect(md).toContain("✅ hypothesis was correct");
+    expect(md).toContain("**Resolved by:** dana");
+    expect(md).toContain("**Hypothesis was:** correct");
   });
 
   test("reflects a wrong or partial hypothesis", () => {
-    expect(buildResolutionCanvasMarkdown({ ...base, hypothesisWasCorrect: false })).toContain("❌ hypothesis was wrong");
-    expect(buildResolutionCanvasMarkdown({ ...base, hypothesisWasCorrect: null })).toContain("➖ hypothesis was partly right");
+    expect(buildResolutionCanvasMarkdown({ ...base, hypothesisWasCorrect: false })).toContain("**Hypothesis was:** incorrect");
+    expect(buildResolutionCanvasMarkdown({ ...base, hypothesisWasCorrect: null })).toContain("**Hypothesis was:** partially correct");
   });
 });
