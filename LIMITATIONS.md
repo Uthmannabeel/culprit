@@ -11,14 +11,17 @@ evidence, confidence is categorical and prompt-calibrated, writes require a huma
 and the App Home publishes a track record from logged outcomes — but no constraint makes
 a language model infallible. Treat every verdict as a well-researched starting point.
 
-## Evidence is GitHub-shaped
+## Evidence is GitHub-shaped by default
 
-Culprit sees code changes, PRs, issues, deployments, and CI runs. It does not see logs,
-metrics, traces, or feature flags, so causes with no GitHub footprint (expired certs,
-quota exhaustion, upstream outages, config drift outside the repo) are invisible, and it
-carries a structural bias toward "a recent change did it". Wiring log/metric MCP servers
-into the same loop is the first roadmap item. Triage is also **single-repo per incident**
-— no cross-service causal reasoning yet.
+Out of the box Culprit sees code changes, PRs, issues, deployments, and CI runs — so
+causes with no GitHub footprint (expired certs, quota exhaustion, upstream outages)
+need a connected source, and the default setup carries a structural bias toward "a
+recent change did it". The **Evidence Hub** (`EVIDENCE_MCP_SERVERS`) closes this by
+letting any MCP server (error tracker, log/metric search) join the loop — but no
+integrations are bundled, the hub speaks Streamable-HTTP MCP only (no stdio servers
+yet), and it has been verified against an in-process MCP server in tests, not against
+live vendor servers. Triage is also **single-repo per incident** — no cross-service
+causal reasoning yet.
 
 ## Data leaves your machine
 

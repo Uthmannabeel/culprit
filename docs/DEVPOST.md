@@ -65,9 +65,11 @@ in your workspace.
 - **Multi-signal evidence:** rather than betting on one source, Culprit cross-checks
   recently merged **pull requests** (the strongest "what changed / who to ask" clue),
   recent **commits**, open **issues**, and a **code search** to locate the affected file.
-- **MCP on both sides:** Culprit **consumes** the GitHub MCP server as its read-only
-  evidence source, and **ships its own** MCP server exposing a `triage_incident` tool,
-  so any other MCP-speaking agent can reuse Culprit — regardless of which brain runs.
+- **MCP on three sides:** Culprit **consumes** the GitHub MCP server as a read-only
+  evidence source, **ships its own** MCP server exposing a `triage_incident` tool so any
+  other agent can reuse Culprit — and its **Evidence Hub** turns *any* MCP server into
+  an additional evidence source via one env var (error trackers, log search — zero
+  integration code; the MCP ecosystem is the integration surface).
 - **Write-path:** filing the issue is a deterministic, explicit, human-clicked GitHub
   REST call — the autonomous loop itself is read-only.
 - Built on the **ECC (Everything Claude Code)** agent harness; TypeScript (strict),

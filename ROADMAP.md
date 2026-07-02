@@ -9,19 +9,18 @@ Everything below extends what already ships: memory-first triage, the learning l
 multi-signal GitHub evidence, alert auto-triage, the living Canvas, the App Home track
 record, and the honest-scope discipline in [`LIMITATIONS.md`](./LIMITATIONS.md).
 
-## Phase 1 — Evidence Hub: any MCP server is an evidence source
+## Phase 1 — Evidence Hub: any MCP server is an evidence source ✅ SHIPPED
 
-Culprit already consumes the GitHub MCP server and serves its own. Generalise it:
-`EVIDENCE_MCP_SERVERS` lists any number of MCP servers (Sentry, Datadog, Grafana,
-internal runbooks — anything speaking MCP), and their tools join the same bounded
-agentic loop alongside memory and GitHub. This dissolves the biggest limitation
-("evidence is GitHub-shaped") *without writing a single vendor integration* — the MCP
-ecosystem becomes Culprit's integration surface.
+`EVIDENCE_MCP_SERVERS` lists any number of Streamable-HTTP MCP servers (Sentry,
+Grafana, internal log search — anything speaking MCP), and their tools join the same
+bounded agentic loop alongside memory and GitHub, on both brains. Per-source failure
+isolation (a down server never breaks triage), per-source bearer auth, and generic
+discovery/passthrough tools so no vendor code is ever written — the MCP ecosystem is
+Culprit's integration surface. Verified against a real in-process MCP server in the
+test suite.
 
-- Deliverables: multi-server MCP bridge with per-source namespacing, graceful
-  per-source failure, evidence citations that name their source.
-- Acceptance: an incident whose cause is visible only in logs (via a log-search MCP
-  server) gets a correct verdict citing that source.
+- Remaining in this phase: stdio-launched servers, and citations that auto-tag their
+  source in the verdict card.
 
 ## Phase 2 — Calibrated confidence: the track record feeds back
 

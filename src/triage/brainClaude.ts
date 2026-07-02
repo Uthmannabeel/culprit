@@ -3,12 +3,44 @@ import type { AppConfig } from "../config.js";
 import { GitHubMcpBridge } from "../mcp/githubClient.js";
 import { IncidentMemory } from "../memory/store.js";
 import type { RecallHit } from "../memory/types.js";
+import {
+  EvidenceHub,
+  HUB_LIST_TOOL_DESCRIPTION,
+  HUB_LIST_TOOL_NAME,
+  HUB_QUERY_TOOL_DESCRIPTION,
+  HUB_QUERY_TOOL_NAME,
+  parseEvidenceServers,
+  parseHubArgs,
+} from "../mcp/evidenceHub.js";
 import { TRIAGE_SYSTEM_PROMPT, buildTriageUserMessage } from "./prompt.js";
 import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, formatRecallResult, toPriorIncidents } from "./recall.js";
 import { describeToolCall } from "./progress.js";
 import { TriageResultSchema, type ProgressFn, type TriageRequest, type TriageResult } from "./types.js";
 
 export type { ProgressFn } from "./types.js";
+
+/** The Evidence Hub's two generic tools, as Anthropic tool definitions. */
+const HUB_TOOLS: Anthropic.Tool[] = [
+  {
+    name: HUB_LIST_TOOL_NAME,
+    description: HUB_LIST_TOOL_DESCRIPTION,
+    input_schema: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
+    name: HUB_QUERY_TOOL_NAME,
+    description: HUB_QUERY_TOOL_DESCRIPTION,
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        source: { type: "string", description: "The evidence source name (from list_evidence_sources)." },
+        tool: { type: "string", description: "The tool to call on that source." },
+        argsJson: { type: "string", description: "The tool's arguments as a JSON object string." },
+      },
+      required: ["source", "tool"],
+    },
+  },
+];
 
 /** Incident-memory recall as a native Claude tool (mirrors the Gemini path). */
 const RECALL_TOOL: Anthropic.Tool = {
@@ -92,13 +124,20 @@ export async function runTriageClaude(
 
   const memory = new IncidentMemory(config);
   const collectedHits: RecallHit[] = [];
+  const hub = new EvidenceHub(parseEvidenceServers(config.EVIDENCE_MCP_SERVERS));
 
   // MCP tool schemas carry `type: "object"` at runtime; cast to the SDK type.
-  const tools = [...bridge.getTools(), RECALL_TOOL, SUBMIT_TOOL] as Anthropic.Tool[];
+  const tools = [
+    ...bridge.getTools(),
+    ...(hub.enabled ? HUB_TOOLS : []),
+    RECALL_TOOL,
+    SUBMIT_TOOL,
+  ] as Anthropic.Tool[];
   const messages: Anthropic.MessageParam[] = [
     { role: "user", content: buildTriageUserMessage(req, repo) },
   ];
 
+  try {
   for (let step = 0; step < config.TRIAGE_MAX_STEPS; step++) {
     const forceSubmit = step === config.TRIAGE_MAX_STEPS - 1;
     const response = await anthropic.messages.create({
@@ -149,6 +188,15 @@ export async function runTriageClaude(
           collectedHits.push(...hits);
           return { type: "tool_result", tool_use_id: call.id, content: truncate(formatRecallResult(hits), 8000) };
         }
+        if (call.name === HUB_LIST_TOOL_NAME) {
+          await onProgress?.(describeToolCall(call.name));
+          return { type: "tool_result", tool_use_id: call.id, content: truncate(JSON.stringify(await hub.sources()), 8000) };
+        }
+        if (call.name === HUB_QUERY_TOOL_NAME) {
+          await onProgress?.(describeToolCall(call.name));
+          const text = await hub.call(String(input.source ?? ""), String(input.tool ?? ""), parseHubArgs(input.argsJson));
+          return { type: "tool_result", tool_use_id: call.id, content: truncate(text, 8000) };
+        }
         await onProgress?.(describeToolCall(call.name));
         const { text, isError } = await bridge.callTool(call.name, input);
         return { type: "tool_result", tool_use_id: call.id, content: truncate(text, 8000), is_error: isError };
@@ -158,6 +206,9 @@ export async function runTriageClaude(
   }
 
   throw new Error("Triage did not converge on a verdict within the step budget.");
+  } finally {
+    await hub.close();
+  }
 }
 
 /** Keep individual tool results from blowing the context budget. */

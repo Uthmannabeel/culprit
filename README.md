@@ -112,6 +112,11 @@ to the affected file), **deployments**, **CI workflow runs**, open issues, and a
 search (with a filename fallback for unindexed repos) — rather than betting on a single
 source. Run `npm run verify:evidence` to confirm every signal works against your repo.
 
+And evidence isn't limited to GitHub: the **Evidence Hub** (`EVIDENCE_MCP_SERVERS`)
+plugs **any MCP server** into the same loop — point it at an error tracker's or log
+platform's MCP server and its tools become triage evidence, with zero integration code.
+The MCP ecosystem *is* the integration surface.
+
 Beyond @mentions, Culprit can watch **alert channels** (`ALERT_CHANNELS`): a webhook
 post from Sentry/PagerDuty/Datadog landing there is auto-triaged, no mention needed.
 Memory is manageable in-channel too — `@Culprit memory` shows what it knows,

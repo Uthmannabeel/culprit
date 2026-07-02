@@ -15,6 +15,15 @@ import {
 } from "../github/evidence.js";
 import { IncidentMemory } from "../memory/store.js";
 import type { RecallHit } from "../memory/types.js";
+import {
+  EvidenceHub,
+  HUB_LIST_TOOL_DESCRIPTION,
+  HUB_LIST_TOOL_NAME,
+  HUB_QUERY_TOOL_DESCRIPTION,
+  HUB_QUERY_TOOL_NAME,
+  parseEvidenceServers,
+  parseHubArgs,
+} from "../mcp/evidenceHub.js";
 import type { ProgressFn } from "./types.js";
 import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, formatRecallResult, toPriorIncidents } from "./recall.js";
 import { describeToolCall } from "./progress.js";
@@ -152,12 +161,35 @@ const SUBMIT_TOOL: FunctionDeclaration = {
   },
 };
 
+/** Gemini declarations for the Evidence Hub's two generic tools. */
+const HUB_TOOLS: FunctionDeclaration[] = [
+  {
+    name: HUB_LIST_TOOL_NAME,
+    description: HUB_LIST_TOOL_DESCRIPTION,
+    parameters: { type: Type.OBJECT, properties: {} },
+  },
+  {
+    name: HUB_QUERY_TOOL_NAME,
+    description: HUB_QUERY_TOOL_DESCRIPTION,
+    parameters: {
+      type: Type.OBJECT,
+      properties: {
+        source: { type: Type.STRING, description: "The evidence source name (from list_evidence_sources)." },
+        tool: { type: Type.STRING, description: "The tool to call on that source." },
+        argsJson: { type: Type.STRING, description: "The tool's arguments as a JSON object string, e.g. '{\"query\":\"checkout 500\"}'." },
+      },
+      required: ["source", "tool"],
+    },
+  },
+];
+
 /** Run one evidence tool and return a text result for the model. */
 async function runEvidenceTool(
   config: AppConfig,
   repo: string,
   memory: IncidentMemory,
   collectedHits: RecallHit[],
+  hub: EvidenceHub,
   name: string,
   args: Record<string, unknown>,
 ): Promise<string> {
@@ -195,6 +227,12 @@ async function runEvidenceTool(
       collectedHits.push(...hits);
       return formatRecallResult(hits);
     }
+    if (name === HUB_LIST_TOOL_NAME) {
+      return JSON.stringify(await hub.sources());
+    }
+    if (name === HUB_QUERY_TOOL_NAME) {
+      return hub.call(String(args.source ?? ""), String(args.tool ?? ""), parseHubArgs(args.argsJson));
+    }
     return `Unknown tool: ${name}`;
   } catch (err) {
     return `Tool "${name}" failed: ${err instanceof Error ? err.message : String(err)}`;
@@ -228,9 +266,13 @@ export async function runTriageGemini(
   const ai = new GoogleGenAI({ apiKey: config.GEMINI_API_KEY });
   const memory = new IncidentMemory(config);
   const collectedHits: RecallHit[] = [];
-  const functionDeclarations = [...EVIDENCE_TOOLS, SUBMIT_TOOL];
+  // The Evidence Hub's generic tools only register when sources are configured
+  // — no tool noise for a GitHub-only setup.
+  const hub = new EvidenceHub(parseEvidenceServers(config.EVIDENCE_MCP_SERVERS));
+  const functionDeclarations = [...EVIDENCE_TOOLS, ...(hub.enabled ? HUB_TOOLS : []), SUBMIT_TOOL];
   const contents: Content[] = [{ role: "user", parts: [{ text: buildTriageUserMessage(req, repo) }] }];
 
+  try {
   for (let step = 0; step < config.TRIAGE_MAX_STEPS; step++) {
     const forceSubmit = step === config.TRIAGE_MAX_STEPS - 1;
     // Retried on transient failures (per-minute rate limits, network blips) —
@@ -277,6 +319,7 @@ export async function runTriageGemini(
           repo,
           memory,
           collectedHits,
+          hub,
           call.name ?? "",
           (call.args as Record<string, unknown>) ?? {},
         );
@@ -287,4 +330,7 @@ export async function runTriageGemini(
   }
 
   throw new Error("Triage did not converge on a verdict within the step budget.");
+  } finally {
+    await hub.close();
+  }
 }

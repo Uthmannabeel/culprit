@@ -17,6 +17,7 @@ flowchart TD
       memory[("Incident memory<br/>embeddings + recall / remember")]
       bridge["GitHub MCP client bridge"]
       evidence["GitHub REST evidence<br/>(commits · PRs · issues · code search)"]
+      hub["Evidence Hub<br/>(EVIDENCE_MCP_SERVERS, config-only)"]
       issuer["GitHub REST issue writer<br/>(repo allowlist)"]
     end
 
@@ -24,6 +25,7 @@ flowchart TD
       llm["Gemini 2.5 Flash (free tier)<br/>or Claude Opus 4.8"]
       ghmcp["GitHub MCP server"]
       ghrest["GitHub REST API"]
+      anymcp["ANY MCP server<br/>(error tracker · logs · metrics)"]
     end
 
     user --> mention --> handlers --> brain
@@ -31,6 +33,7 @@ flowchart TD
     brain -->|"1️⃣ recall_incident_memory"| memory
     brain -->|"2️⃣ read-only evidence"| bridge <-->|"MCP"| ghmcp
     brain -->|"2️⃣ read-only evidence"| evidence --> ghrest
+    brain -->|"2️⃣ read-only evidence"| hub <-->|"MCP"| anymcp
     brain -->|"validated verdict + prior incidents"| card --> user
     handlers --> canvas
     card -->|"Create GitHub issue (human click)"| issuer --> ghrest

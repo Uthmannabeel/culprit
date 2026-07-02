@@ -52,6 +52,11 @@ const EnvSchema = z
     // arbitrary repo. Empty + no default repo = unrestricted (single-user/dev only).
     GITHUB_ALLOWED_REPOS: z.string().optional(),
 
+    // Additional MCP servers to use as evidence sources, e.g.
+    // "sentry=https://mcp.sentry.dev/mcp, logs=https://logs.internal/mcp".
+    // Per-source bearer auth via EVIDENCE_MCP_AUTH_<NAME> env vars.
+    EVIDENCE_MCP_SERVERS: z.string().optional(),
+
     GITHUB_MCP_MODE: z.enum(["remote", "local"]).default("remote"),
     GITHUB_MCP_URL: z.string().url().default("https://api.githubcopilot.com/mcp/"),
 

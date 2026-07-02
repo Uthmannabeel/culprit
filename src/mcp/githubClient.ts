@@ -85,7 +85,7 @@ export class GitHubMcpBridge {
 }
 
 /** Flatten MCP content blocks into a single text string for the model. */
-function extractText(content: unknown): string {
+export function extractText(content: unknown): string {
   if (!Array.isArray(content)) return "";
   const parts: string[] = [];
   for (const block of content) {

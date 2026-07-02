@@ -16,6 +16,8 @@ const TOOL_NARRATION: Record<string, string> = {
   list_recent_deployments: "Checking recent deployments",
   list_recent_workflow_runs: "Checking CI runs",
   search_code: "Locating the affected code",
+  list_evidence_sources: "Checking connected evidence sources",
+  query_evidence_source: "Querying an evidence source",
 };
 
 export function describeToolCall(name: string | undefined): string {
