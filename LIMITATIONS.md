@@ -38,11 +38,10 @@ PII scrubbing. Operators should treat the incidents file as sensitive data.
   `@Culprit forget <id>` to remove) but no approval workflow.
 - **Similarity is symptom-based.** Rhyming symptoms can have different causes; the
   prompt treats recalls as leads to verify, not answers, but anchoring risk is real.
-- **Recall is not repo-scoped.** A "strong match" can come from a different system —
-  often useful pattern transfer, occasionally a misleading claim of precedent.
-- **The lexical fallback is English-only.** Its tokenizer drops non-Latin characters,
-  so offline recall does nothing for non-English reports (embedding recall is
-  multilingual-capable but untested in other languages).
+  Same-repo precedent is boosted and cross-repo matches are labeled with their origin,
+  but a labeled cross-system rhyme can still mislead.
+- **The lexical fallback is Unicode-aware but unsophisticated** — English stop-words
+  only, and CJK text is matched as whole runs rather than segmented words.
 
 ## Free-tier quotas are real
 
@@ -74,16 +73,17 @@ multi-workspace tenancy. A real deployment would put memory behind a database.
 
 ## Smaller sharp edges
 
-- **No duplicate-issue detection**: filing doesn't check whether an open issue already
-  tracks the same problem, and idempotency is per-card — re-running triage produces a
-  new card whose button can file a second issue.
-- **No retries**: a transient LLM/API failure fails that triage (users are told to retry).
+- **Duplicate detection is title-based and per-card**: filing warns when an open issue's
+  title rhymes with the draft (click again to file anyway), but semantically-different
+  titles for the same bug slip through, and re-running triage resets the warning state.
+- **Retries cover transient failures only** (rate-limit blips, network resets, overload)
+  — a spent daily quota still fails, with a plain-language explanation.
 - **Slack Connect**: external-org members in shared channels can click buttons and log
-  resolutions — there is no workspace-membership gating. `forget` is attributed in the
-  confirmation message but there is no persistent audit log.
+  resolutions — there is no workspace-membership gating. Write actions land in a local
+  JSONL audit trail (`AUDIT_LOG_PATH`), not a tamper-proof store.
 - **No quality benchmark**: the App Home track record measures live outcomes, but there
-  is no offline golden-set evaluation of hypothesis accuracy — and Culprit exposes no
-  health/metrics endpoint of its own.
+  is no offline golden-set evaluation of hypothesis accuracy. A liveness endpoint exists
+  (`HEALTH_PORT`) but no metrics beyond uptime.
 
 ## Verification honesty
 

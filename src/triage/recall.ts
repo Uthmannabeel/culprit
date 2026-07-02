@@ -22,6 +22,7 @@ export function formatRecallResult(hits: RecallHit[]): string {
       resolvedBy: h.record.resolvedBy,
       similarity: Number(h.score.toFixed(3)),
       matchedBy: h.method,
+      repo: h.record.repo,
       links: h.record.links,
     })),
   );
@@ -48,5 +49,6 @@ export function toPriorIncidents(hits: RecallHit[]): TriageResult["priorIncident
       resolvedBy: h.record.resolvedBy,
       similarity: Number(h.score.toFixed(3)),
       url: h.record.links[0] ?? null,
+      repo: h.record.repo,
     }));
 }

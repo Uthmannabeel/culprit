@@ -76,6 +76,21 @@ describe("IncidentMemory.recall (lexical fallback)", () => {
     const memory = new IncidentMemory(makeConfig());
     expect(await memory.recall("anything")).toEqual([]);
   });
+
+  test("same-repo incidents get a recall boost over cross-repo rhymes", async () => {
+    await writeFile(
+      dbPath,
+      JSON.stringify([
+        { id: "same", symptom: "checkout failing with 500 errors after deploy", resolution: "x", repo: "acme/store" },
+        { id: "other", symptom: "checkout failing with 500 errors after deploy", resolution: "x", repo: "acme/infra" },
+      ]),
+      "utf8",
+    );
+    const memory = new IncidentMemory(makeConfig());
+    const hits = await memory.recall("checkout failing with 500 errors", 2, "acme/store");
+    expect(hits[0]?.record.id).toBe("same");
+    expect(hits[0]!.score).toBeGreaterThan(hits[1]!.score);
+  });
 });
 
 describe("IncidentMemory.forget", () => {

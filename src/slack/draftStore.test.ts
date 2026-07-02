@@ -1,5 +1,13 @@
 import { beforeEach, describe, expect, test } from "vitest";
-import { alreadyFiledUrl, clearDraftStore, decodeIssuePayload, encodeIssuePayload, markFiled } from "./draftStore.js";
+import {
+  alreadyFiledUrl,
+  clearDraftStore,
+  decodeIssuePayload,
+  encodeIssuePayload,
+  markDuplicateWarned,
+  markFiled,
+  wasDuplicateWarned,
+} from "./draftStore.js";
 
 const smallIssue = { title: "Checkout 500s", body: "short body", labels: ["bug"] };
 
@@ -45,5 +53,13 @@ describe("filed-issue idempotency", () => {
   test("undefined values are ignored", () => {
     markFiled(undefined, "https://x");
     expect(alreadyFiledUrl(undefined)).toBeNull();
+  });
+
+  test("duplicate warnings are tracked per card value", () => {
+    const value = encodeIssuePayload({ repo: "acme/store", issue: smallIssue });
+    expect(wasDuplicateWarned(value)).toBe(false);
+    markDuplicateWarned(value);
+    expect(wasDuplicateWarned(value)).toBe(true);
+    expect(wasDuplicateWarned(undefined)).toBe(false);
   });
 });

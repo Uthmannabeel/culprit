@@ -11,7 +11,7 @@ const result: TriageResult = {
   suspectedOwner: "octocat",
   evidence: [{ kind: "pull_request", title: "Refactor payment client #1", url: "https://x/pr/1", why: "renamed the key" }],
   priorIncidents: [
-    { id: "inc-1", symptom: "payments failing at checkout", resolution: "restored env var", resolvedBy: "dana", similarity: 0.77, url: "https://x/pr/1" },
+    { id: "inc-1", symptom: "payments failing at checkout", resolution: "restored env var", resolvedBy: "dana", similarity: 0.77, url: "https://x/pr/1", repo: "acme/store" },
   ],
   recommendedActions: ["Set PAYMENTS_API_KEY in prod"],
   draftIssue: { title: "Checkout 500s", body: "...", labels: ["bug"] },

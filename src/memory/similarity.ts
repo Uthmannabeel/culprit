@@ -27,11 +27,15 @@ const STOP_WORDS = new Set([
 ]);
 
 export function tokenize(text: string): string[] {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .split(/\s+/)
-    .filter((t) => t.length > 2 && !STOP_WORDS.has(t));
+  // Unicode-aware: letters/digits in any script count as token characters, so
+  // the offline fallback isn't silently dead for non-English reports. Short
+  // non-ASCII tokens are kept (CJK words are often 1-2 characters).
+  const tokens = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+  return tokens.filter((t) => {
+    if (STOP_WORDS.has(t)) return false;
+    // eslint-disable-next-line no-control-regex
+    return t.length > 2 || /[^\x00-\x7f]/.test(t);
+  });
 }
 
 /**

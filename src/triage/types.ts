@@ -41,6 +41,8 @@ export const TriageResultSchema = z.object({
         resolvedBy: z.string().nullable(),
         similarity: z.number(),
         url: z.string().nullable(),
+        /** Which repo the past incident belonged to — cross-repo matches are labeled. */
+        repo: z.string().nullable().default(null),
       }),
     )
     .default([]),

@@ -118,7 +118,8 @@ Memory is manageable in-channel too — `@Culprit memory` shows what it knows,
 `@Culprit forget <id>` removes an entry, and `npm run import:issues` bootstraps memory
 from your repo's closed issues.
 
-Culprit is honest about what it can't do — see [`LIMITATIONS.md`](./LIMITATIONS.md).
+Culprit is honest about what it can't do — see [`LIMITATIONS.md`](./LIMITATIONS.md) —
+and explicit about where it's going: [`ROADMAP.md`](./ROADMAP.md).
 
 ## Pluggable brain
 

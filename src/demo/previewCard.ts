@@ -45,6 +45,7 @@ const SAMPLE: TriageResult = {
       resolvedBy: "dana",
       similarity: 0.75,
       url: "https://github.com/Uthmannabeel/culprit-demo-shop/pull/1",
+      repo: "Uthmannabeel/culprit-demo-shop",
     },
   ],
   recommendedActions: [

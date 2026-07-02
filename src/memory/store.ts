@@ -106,11 +106,19 @@ export class IncidentMemory {
    * on any embedding failure, falls back to lexical similarity for the whole
    * set so a recall always returns a ranked, honest answer.
    */
-  async recall(query: string, k: number = this.config.MEMORY_RECALL_K): Promise<RecallHit[]> {
+  async recall(query: string, k: number = this.config.MEMORY_RECALL_K, repoHint?: string): Promise<RecallHit[]> {
     if (!this.loaded) await this.load();
     if (this.records.length === 0) return [];
 
-    const hits = (await this.tryEmbeddingRecall(query)) ?? this.lexicalRecall(query);
+    const raw = (await this.tryEmbeddingRecall(query)) ?? this.lexicalRecall(query);
+    // Same-repo incidents get a small boost — precedent from the same system is
+    // stronger evidence than a rhyme from elsewhere (cross-repo matches still
+    // surface, but labeled with their origin downstream).
+    const hits = raw.map((h) =>
+      repoHint && h.record.repo && h.record.repo.toLowerCase() === repoHint.toLowerCase()
+        ? { ...h, score: Math.min(1, h.score + 0.05) }
+        : h,
+    );
     // Thresholds are method-specific: embedding cosine and lexical Jaccard have
     // very different score distributions (see config comments).
     return hits

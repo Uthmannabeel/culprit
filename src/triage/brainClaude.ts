@@ -145,7 +145,7 @@ export async function runTriageClaude(
         const input = (call.input as Record<string, unknown>) ?? {};
         if (call.name === RECALL_TOOL_NAME) {
           await onProgress?.(describeToolCall(call.name));
-          const hits = await memory.recall(String(input.query ?? ""));
+          const hits = await memory.recall(String(input.query ?? ""), undefined, repo);
           collectedHits.push(...hits);
           return { type: "tool_result", tool_use_id: call.id, content: truncate(formatRecallResult(hits), 8000) };
         }

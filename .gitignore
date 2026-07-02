@@ -25,5 +25,8 @@ coverage/
 # incident-memory embedding cache (derived, machine-local)
 data/*.cache.json
 
+# audit trail (machine-local)
+data/audit.jsonl
+
 # ECC (Everything Claude Code) agent harness — local dev aid, not a build artifact
 .claude/

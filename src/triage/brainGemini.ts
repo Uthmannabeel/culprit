@@ -18,6 +18,7 @@ import type { RecallHit } from "../memory/types.js";
 import type { ProgressFn } from "./types.js";
 import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, formatRecallResult, toPriorIncidents } from "./recall.js";
 import { describeToolCall } from "./progress.js";
+import { withRetry } from "../util/retry.js";
 
 /** Read-only GitHub evidence tools, with Gemini-friendly schemas. */
 const EVIDENCE_TOOLS: FunctionDeclaration[] = [
@@ -190,7 +191,7 @@ async function runEvidenceTool(
       return JSON.stringify(await searchCode(config, repo, String(args.query)));
     }
     if (name === RECALL_TOOL_NAME) {
-      const hits = await memory.recall(String(args.query ?? ""));
+      const hits = await memory.recall(String(args.query ?? ""), undefined, repo);
       collectedHits.push(...hits);
       return formatRecallResult(hits);
     }
@@ -232,9 +233,12 @@ export async function runTriageGemini(
 
   for (let step = 0; step < config.TRIAGE_MAX_STEPS; step++) {
     const forceSubmit = step === config.TRIAGE_MAX_STEPS - 1;
-    const result = await ai.models.generateContent({
-      model: config.GEMINI_MODEL,
-      contents,
+    // Retried on transient failures (per-minute rate limits, network blips) —
+    // a spent daily quota exhausts retries fast and surfaces the real error.
+    const result = await withRetry(() =>
+      ai.models.generateContent({
+        model: config.GEMINI_MODEL,
+        contents,
       config: {
         systemInstruction: TRIAGE_SYSTEM_PROMPT,
         tools: [{ functionDeclarations }],
@@ -243,8 +247,9 @@ export async function runTriageGemini(
             ? { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: ["submit_triage"] }
             : { mode: FunctionCallingConfigMode.AUTO },
         },
-      },
-    });
+        },
+      }),
+    );
 
     const calls = result.functionCalls ?? [];
     const modelContent = result.candidates?.[0]?.content;

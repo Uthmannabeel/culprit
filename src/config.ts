@@ -65,6 +65,14 @@ const EnvSchema = z
     MAX_CONCURRENT_TRIAGES: z.coerce.number().int().positive().max(20).default(3),
 
     TRIAGE_MAX_STEPS: z.coerce.number().int().positive().max(20).default(8),
+
+    // Append-only JSONL trail of write actions (issue filed / resolution logged / forget).
+    AUDIT_LOG_PATH: z.string().default("data/audit.jsonl"),
+    // Optional HTTP health endpoint (GET / -> JSON). Unset/empty = disabled.
+    HEALTH_PORT: z.preprocess(
+      (v) => (v === "" || v === undefined ? undefined : v),
+      z.coerce.number().int().positive().max(65535).optional(),
+    ),
     LOG_LEVEL: z.enum(["debug", "info", "warn", "error"]).default("info"),
   })
   .superRefine((cfg, ctx) => {

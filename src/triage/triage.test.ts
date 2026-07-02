@@ -54,7 +54,7 @@ describe("renderTriageBlocks", () => {
       {
         ...sample,
         priorIncidents: [
-          { id: "inc-1", symptom: "checkout 500s after deploy", resolution: "restored env var", resolvedBy: "dana", similarity: 0.77, url: "https://x/pr/1" },
+          { id: "inc-1", symptom: "checkout 500s after deploy", resolution: "restored env var", resolvedBy: "dana", similarity: 0.77, url: "https://x/pr/1", repo: "acme/store" },
         ],
       },
       "o/r",
@@ -63,6 +63,7 @@ describe("renderTriageBlocks", () => {
     expect(text).toContain("Prior incident match");
     expect(text).toContain("Strong match");
     expect(text).toContain("dana");
+    expect(text).toContain("acme/store"); // cross-repo precedent is labeled with its origin
     expect(text).not.toContain("77%"); // categorical words, not fake precision
   });
 
@@ -90,8 +91,8 @@ describe("renderTriageBlocks", () => {
           why: "reason ".repeat(60),
         })),
         priorIncidents: [
-          { id: "p1", symptom: "symptom ".repeat(100), resolution: "fix ".repeat(200), resolvedBy: "dana", similarity: 0.9, url: "https://x/1" },
-          { id: "p2", symptom: "symptom ".repeat(100), resolution: "fix ".repeat(200), resolvedBy: "sam", similarity: 0.8, url: "https://x/2" },
+          { id: "p1", symptom: "symptom ".repeat(100), resolution: "fix ".repeat(200), resolvedBy: "dana", similarity: 0.9, url: "https://x/1", repo: null },
+          { id: "p2", symptom: "symptom ".repeat(100), resolution: "fix ".repeat(200), resolvedBy: "sam", similarity: 0.8, url: "https://x/2", repo: null },
         ],
       },
       "o/r",

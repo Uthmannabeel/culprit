@@ -29,7 +29,19 @@ describe("tokenize", () => {
   });
 });
 
+describe("tokenize (non-English)", () => {
+  test("keeps non-Latin scripts instead of dropping them", () => {
+    expect(tokenize("оплата не работает")).toEqual(["оплата", "не", "работает"]);
+    expect(tokenize("支払いが失敗")).toContain("支払いが失敗");
+  });
+});
+
 describe("lexicalSimilarity", () => {
+  test("works for non-English reports", () => {
+    const related = lexicalSimilarity("оплата не работает на кассе", "касса: оплата не работает после деплоя");
+    expect(related).toBeGreaterThan(0.3);
+  });
+
   test("scores overlapping symptoms above unrelated ones", () => {
     const query = "checkout returning 500 errors after deploy";
     const related = lexicalSimilarity(query, "payments failing at checkout with 500 after a deploy");

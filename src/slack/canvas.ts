@@ -45,7 +45,8 @@ export function buildIncidentCanvasMarkdown(
       const ref = link ? ` ([details](${link}))` : "";
       const who = p.resolvedBy ? ` Resolved by ${mdSafe(p.resolvedBy)}.` : "";
       const fix = p.resolution ? ` Fix at the time: ${mdSafe(p.resolution)}` : "";
-      lines.push(`- **${similarityLabel(p.similarity)}** — ${mdSafe(p.symptom)}${ref}.${who}${fix}`);
+      const origin = p.repo && p.repo.toLowerCase() !== repo.toLowerCase() ? ` (in ${mdSafe(p.repo)})` : "";
+      lines.push(`- **${similarityLabel(p.similarity)}**${origin} — ${mdSafe(p.symptom)}${ref}.${who}${fix}`);
     }
   }
 

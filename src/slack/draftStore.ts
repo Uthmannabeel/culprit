@@ -75,8 +75,28 @@ export function alreadyFiledUrl(value: string | undefined): string | null {
   return filed.get(value) ?? null;
 }
 
+/**
+ * Duplicate-warning state: the first click that finds a similar open issue
+ * warns instead of filing; the second click files anyway. Keyed like `filed`.
+ */
+const warned = new Set<string>();
+
+export function markDuplicateWarned(value: string | undefined): void {
+  if (!value) return;
+  warned.add(value);
+  if (warned.size > MAX_FILED) {
+    const oldest = warned.values().next().value;
+    if (oldest) warned.delete(oldest);
+  }
+}
+
+export function wasDuplicateWarned(value: string | undefined): boolean {
+  return Boolean(value && warned.has(value));
+}
+
 /** Test hook: reset the in-process stores. */
 export function clearDraftStore(): void {
   stored.clear();
   filed.clear();
+  warned.clear();
 }

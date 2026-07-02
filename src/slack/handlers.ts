@@ -1,9 +1,17 @@
 import type { App } from "@slack/bolt";
 import { isIssueRepoAllowed, type AppConfig } from "../config.js";
 import { runTriage } from "../triage/brain.js";
-import { createGithubIssue } from "../github/issues.js";
+import { createGithubIssue, findSimilarIssue } from "../github/issues.js";
+import { listOpenIssues } from "../github/evidence.js";
+import { audit } from "../audit.js";
 import { ACTION_CREATE_ISSUE, renderTriageBlocks } from "./blocks.js";
-import { alreadyFiledUrl, decodeIssuePayload, markFiled } from "./draftStore.js";
+import {
+  alreadyFiledUrl,
+  decodeIssuePayload,
+  markDuplicateWarned,
+  markFiled,
+  wasDuplicateWarned,
+} from "./draftStore.js";
 import { IncidentMemory } from "../memory/store.js";
 import {
   ACTION_MARK_RESOLVED,
@@ -108,6 +116,7 @@ export function registerHandlers(app: App, config: AppConfig): void {
         });
       } else {
         const removed = await memory.forget(command.id);
+        if (removed) await audit(config, "memory_forgotten", { id: command.id, actor: userId ?? null });
         // Attribute the deletion publicly — memory moderation should leave a trace.
         const actor = userId ? ` (removed by <@${userId}>)` : "";
         await client.chat.postMessage({
@@ -327,9 +336,29 @@ export function registerHandlers(app: App, config: AppConfig): void {
       return;
     }
 
+    // Duplicate guard: if an open issue already rhymes with this draft, warn
+    // once (with the link) instead of filing; a second click files anyway.
+    if (!wasDuplicateWarned(rawValue)) {
+      const open = await listOpenIssues(config, payload.repo, 20).catch(() => []);
+      const similar = findSimilarIssue(open, payload.issue.title);
+      if (similar) {
+        markDuplicateWarned(rawValue);
+        if (channel) {
+          await client.chat.postMessage({
+            channel,
+            thread_ts: threadTs,
+            text: `This may already be tracked: <${similar.url}|#${similar.number} ${similar.title.slice(0, 80)}>. Click *Create GitHub issue* again to file anyway.`,
+          });
+        }
+        return;
+      }
+    }
+
     try {
       const created = await createGithubIssue(config, payload.repo, payload.issue);
       markFiled(rawValue, created.htmlUrl);
+      const actor = (body as { user?: { id?: string } }).user?.id ?? null;
+      await audit(config, "issue_filed", { repo: payload.repo, issue: created.number, url: created.htmlUrl, actor });
       if (channel) {
         await client.chat.postMessage({
           channel,
@@ -368,6 +397,12 @@ export function registerHandlers(app: App, config: AppConfig): void {
     try {
       const memory = new IncidentMemory(config);
       await memory.remember(record);
+      await audit(config, "resolution_logged", {
+        id: record.id,
+        repo: ctx.repo,
+        resolvedBy: record.resolvedBy,
+        hypothesisWasCorrect: record.hypothesisWasCorrect,
+      });
       if (ctx.canvasId) {
         await appendResolution(client, ctx.canvasId, buildResolutionCanvasMarkdown(record));
       }

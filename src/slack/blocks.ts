@@ -70,7 +70,9 @@ export function renderTriageBlocks(
       const ref = link ? ` (<${link}|details>)` : "";
       const who = p.resolvedBy ? ` Resolved by ${escape(p.resolvedBy.slice(0, 80))}.` : "";
       const fix = p.resolution ? ` Fix at the time: ${escape(p.resolution.slice(0, 300))}` : "";
-      return `*${similarityLabel(p.similarity)}* — ${escape(p.symptom.slice(0, 200))}${ref}.${who}${fix}`;
+      // Precedent from a different system is a weaker claim — say where it's from.
+      const origin = p.repo && p.repo.toLowerCase() !== repo.toLowerCase() ? ` _(in \`${escape(p.repo)}\`)_` : "";
+      return `*${similarityLabel(p.similarity)}*${origin} — ${escape(p.symptom.slice(0, 200))}${ref}.${who}${fix}`;
     });
     blocks.push({
       type: "section",

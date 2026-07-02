@@ -1,9 +1,28 @@
 import type { AppConfig } from "../config.js";
+import { lexicalSimilarity } from "../memory/similarity.js";
 
 export interface DraftIssue {
   title: string;
   body: string;
   labels: string[];
+}
+
+/**
+ * Find an open issue that likely already tracks the same problem, so the
+ * Create-issue button can warn before filing a duplicate. Title-overlap based;
+ * intentionally conservative (warn only on a clear rhyme).
+ */
+export function findSimilarIssue<T extends { title: string }>(issues: T[], draftTitle: string): T | null {
+  let best: T | null = null;
+  let bestScore = 0;
+  for (const issue of issues) {
+    const score = lexicalSimilarity(issue.title, draftTitle);
+    if (score > bestScore) {
+      best = issue;
+      bestScore = score;
+    }
+  }
+  return bestScore >= 0.35 ? best : null;
 }
 
 export interface CreatedIssue {
