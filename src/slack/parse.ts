@@ -22,6 +22,32 @@ export function stripMentions(text: string): string {
   return text.replace(/<@[^>]+>/g, "").trim();
 }
 
+/**
+ * Format prior thread messages as investigation context. When Culprit is
+ * mentioned inside an ongoing discussion, the thread usually carries the
+ * richest clues (what people tried, error snippets, timings) — ignoring it
+ * wastes the best context in the room. The trigger message itself is excluded;
+ * text is mention-stripped and size-capped so it can't blow the prompt budget.
+ */
+export function formatThreadContext(
+  messages: Array<{ text?: string; ts?: string }>,
+  triggerTs: string,
+  maxMessages = 12,
+  maxTotal = 2500,
+): string {
+  const lines: string[] = [];
+  let total = 0;
+  for (const m of messages) {
+    if (!m.text || m.ts === triggerTs) continue;
+    const line = stripMentions(m.text).slice(0, 300);
+    if (!line) continue;
+    if (total + line.length > maxTotal) break;
+    lines.push(`- ${line}`);
+    total += line.length;
+  }
+  return lines.slice(-maxMessages).join("\n");
+}
+
 /** Memory-management commands a user can send instead of an incident report. */
 export type MemoryCommand = { type: "stats" } | { type: "forget"; id: string };
 

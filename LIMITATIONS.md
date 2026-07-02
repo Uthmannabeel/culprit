@@ -20,6 +20,14 @@ carries a structural bias toward "a recent change did it". Wiring log/metric MCP
 into the same loop is the first roadmap item. Triage is also **single-repo per incident**
 — no cross-service causal reasoning yet.
 
+## Data leaves your machine
+
+Incident text is sent to the configured LLM provider (Gemini or Anthropic) and GitHub.
+On **Google's free tier, submitted data may be used to improve their models** — use a
+paid tier (or the Anthropic path) for anything sensitive. Memory records (symptoms,
+resolutions, resolver handles) are stored in plaintext JSON with no retention policy or
+PII scrubbing. Operators should treat the incidents file as sensitive data.
+
 ## Memory is only as good as what gets logged
 
 - **It compounds through use.** If nobody clicks *Log resolution*, Culprit stays
@@ -30,6 +38,11 @@ into the same loop is the first roadmap item. Triage is also **single-repo per i
   `@Culprit forget <id>` to remove) but no approval workflow.
 - **Similarity is symptom-based.** Rhyming symptoms can have different causes; the
   prompt treats recalls as leads to verify, not answers, but anchoring risk is real.
+- **Recall is not repo-scoped.** A "strong match" can come from a different system —
+  often useful pattern transfer, occasionally a misleading claim of precedent.
+- **The lexical fallback is English-only.** Its tokenizer drops non-Latin characters,
+  so offline recall does nothing for non-English reports (embedding recall is
+  multilingual-capable but untested in other languages).
 
 ## Free-tier quotas are real
 
@@ -58,6 +71,19 @@ multi-workspace tenancy. A real deployment would put memory behind a database.
 - **Alert ingestion is Slack-native only**: Culprit auto-triages messages landing in
   configured alert channels (`ALERT_CHANNELS`), which covers webhook-to-Slack setups
   (Sentry/PagerDuty/Datadog → channel), but it has no direct API integrations.
+
+## Smaller sharp edges
+
+- **No duplicate-issue detection**: filing doesn't check whether an open issue already
+  tracks the same problem, and idempotency is per-card — re-running triage produces a
+  new card whose button can file a second issue.
+- **No retries**: a transient LLM/API failure fails that triage (users are told to retry).
+- **Slack Connect**: external-org members in shared channels can click buttons and log
+  resolutions — there is no workspace-membership gating. `forget` is attributed in the
+  confirmation message but there is no persistent audit log.
+- **No quality benchmark**: the App Home track record measures live outcomes, but there
+  is no offline golden-set evaluation of hypothesis accuracy — and Culprit exposes no
+  health/metrics endpoint of its own.
 
 ## Verification honesty
 

@@ -64,6 +64,8 @@ export interface TriageRequest {
   repo?: string;
   /** Who reported it (Slack display name), for context only. */
   reportedBy?: string;
+  /** Prior discussion from the thread the report was made in, if any. */
+  threadContext?: string;
 }
 
 /** Optional progress callback so the Slack handler can stream status updates. */

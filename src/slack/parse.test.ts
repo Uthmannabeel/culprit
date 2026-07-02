@@ -1,5 +1,12 @@
 import { describe, expect, test } from "vitest";
-import { parseAlertChannels, parseMemoryCommand, parseRepo, shouldAutoTriage, stripMentions } from "./parse.js";
+import {
+  formatThreadContext,
+  parseAlertChannels,
+  parseMemoryCommand,
+  parseRepo,
+  shouldAutoTriage,
+  stripMentions,
+} from "./parse.js";
 
 describe("parseRepo", () => {
   test("reads an explicit repo: tag", () => {
@@ -33,6 +40,34 @@ describe("stripMentions", () => {
   test("removes bot mentions and trims", () => {
     expect(stripMentions("<@U123ABC> checkout is 500ing")).toBe("checkout is 500ing");
     expect(stripMentions("<@U123ABC>")).toBe("");
+  });
+});
+
+describe("formatThreadContext", () => {
+  test("keeps prior discussion, excludes the trigger, strips mentions", () => {
+    const out = formatThreadContext(
+      [
+        { text: "checkout errors spiking since 09:40", ts: "1.0" },
+        { text: "<@U1> tried restarting the pods, no change", ts: "2.0" },
+        { text: "<@UBOT> what's the cause?", ts: "3.0" }, // trigger
+      ],
+      "3.0",
+    );
+    expect(out).toContain("checkout errors spiking since 09:40");
+    expect(out).toContain("tried restarting the pods");
+    expect(out).not.toContain("what's the cause");
+    expect(out).not.toContain("<@U1>");
+  });
+
+  test("caps total size and message count", () => {
+    const messages = Array.from({ length: 30 }, (_, i) => ({ text: `msg ${i} ${"x".repeat(280)}`, ts: `${i}` }));
+    const out = formatThreadContext(messages, "none");
+    expect(out.length).toBeLessThanOrEqual(2500 + 200);
+    expect(out.split("\n").length).toBeLessThanOrEqual(12);
+  });
+
+  test("returns empty for no usable messages", () => {
+    expect(formatThreadContext([{ text: "", ts: "1" }], "1")).toBe("");
   });
 });
 

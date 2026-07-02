@@ -21,7 +21,14 @@ import {
 } from "./canvas.js";
 import { buildHomeView } from "./home.js";
 
-import { parseAlertChannels, parseMemoryCommand, parseRepo, shouldAutoTriage, stripMentions } from "./parse.js";
+import {
+  formatThreadContext,
+  parseAlertChannels,
+  parseMemoryCommand,
+  parseRepo,
+  shouldAutoTriage,
+  stripMentions,
+} from "./parse.js";
 import { friendlyTriageError } from "../triage/progress.js";
 
 /** Parse a JSON interaction payload defensively — never throw on bad input. */
@@ -70,10 +77,14 @@ export function registerHandlers(app: App, config: AppConfig): void {
     text: string;
     channel: string;
     threadTs: string;
+    /** The triggering message's own ts (excluded from thread context). */
+    messageTs?: string;
+    /** Set when the report was posted inside an existing thread. */
+    inExistingThread?: boolean;
     userId?: string;
     client: App["client"];
   }) => {
-    const { text, channel, threadTs, userId, client } = args;
+    const { text, channel, threadTs, messageTs, inExistingThread, userId, client } = args;
     const report = stripMentions(text);
     if (!report) {
       await client.chat.postMessage({
@@ -97,11 +108,13 @@ export function registerHandlers(app: App, config: AppConfig): void {
         });
       } else {
         const removed = await memory.forget(command.id);
+        // Attribute the deletion publicly — memory moderation should leave a trace.
+        const actor = userId ? ` (removed by <@${userId}>)` : "";
         await client.chat.postMessage({
           channel,
           thread_ts: threadTs,
           text: removed
-            ? `Removed \`${command.id}\` from memory — it will no longer be recalled.`
+            ? `Removed \`${command.id}\` from memory — it will no longer be recalled${actor}.`
             : `No memory entry with id \`${command.id}\`. Send \`memory\` to see what's stored.`,
         });
       }
@@ -142,9 +155,24 @@ export function registerHandlers(app: App, config: AppConfig): void {
 
     try {
       const reporter = await displayName(client, userId);
+      // Mentioned mid-discussion? The thread above usually holds the best clues
+      // (what was tried, error snippets, timings) — bring it along. Best-effort.
+      let threadContext: string | undefined;
+      if (inExistingThread) {
+        try {
+          const replies = await client.conversations.replies({ channel, ts: threadTs, limit: 25 });
+          const context = formatThreadContext(
+            (replies.messages ?? []) as Array<{ text?: string; ts?: string }>,
+            messageTs ?? "",
+          );
+          if (context) threadContext = context;
+        } catch (err) {
+          logError("thread-context", err);
+        }
+      }
       const result = await runTriage(
         config,
-        { report, repo, reportedBy: reporter },
+        { report, repo, reportedBy: reporter, threadContext },
         async (note) => {
           if (ack.ts) await client.chat.update({ channel, ts: ack.ts, text: `${note}…` });
         },
@@ -184,6 +212,8 @@ export function registerHandlers(app: App, config: AppConfig): void {
       text: event.text ?? "",
       channel: event.channel,
       threadTs: event.thread_ts ?? event.ts,
+      messageTs: event.ts,
+      inExistingThread: Boolean(event.thread_ts),
       userId: event.user,
       client,
     });
@@ -232,6 +262,8 @@ export function registerHandlers(app: App, config: AppConfig): void {
         text: m.text ?? "",
         channel: m.channel,
         threadTs: m.thread_ts ?? m.ts,
+        messageTs: m.ts,
+        inExistingThread: Boolean(m.thread_ts),
         userId: m.user,
         client,
       });
