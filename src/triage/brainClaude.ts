@@ -10,10 +10,10 @@ import {
   HUB_QUERY_TOOL_DESCRIPTION,
   HUB_QUERY_TOOL_NAME,
   parseEvidenceServers,
-  parseHubArgs,
 } from "../mcp/evidenceHub.js";
 import { TRIAGE_SYSTEM_PROMPT, buildTriageUserMessage } from "./prompt.js";
-import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, formatRecallResult, toPriorIncidents } from "./recall.js";
+import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, toPriorIncidents } from "./recall.js";
+import { dispatchSharedTool, formatEvidenceResult, type EvidenceDeps } from "./evidenceTools.js";
 import { describeToolCall } from "./progress.js";
 import { TriageResultSchema, type ProgressFn, type TriageRequest, type TriageResult } from "./types.js";
 
@@ -125,6 +125,7 @@ export async function runTriageClaude(
   const memory = new IncidentMemory(config);
   const collectedHits: RecallHit[] = [];
   const hub = new EvidenceHub(parseEvidenceServers(config.EVIDENCE_MCP_SERVERS));
+  const deps: EvidenceDeps = { config, repo, memory, hub, collectedHits };
 
   // MCP tool schemas carry `type: "object"` at runtime; cast to the SDK type.
   const tools = [
@@ -182,22 +183,19 @@ export async function runTriageClaude(
     const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
       toolUses.map(async (call): Promise<Anthropic.ToolResultBlockParam> => {
         const input = (call.input as Record<string, unknown>) ?? {};
-        if (call.name === RECALL_TOOL_NAME) {
-          await onProgress?.(describeToolCall(call.name));
-          const hits = await memory.recall(String(input.query ?? ""), undefined, repo);
-          collectedHits.push(...hits);
-          return { type: "tool_result", tool_use_id: call.id, content: truncate(formatRecallResult(hits), 8000) };
-        }
-        if (call.name === HUB_LIST_TOOL_NAME) {
-          await onProgress?.(describeToolCall(call.name));
-          return { type: "tool_result", tool_use_id: call.id, content: truncate(JSON.stringify(await hub.sources()), 8000) };
-        }
-        if (call.name === HUB_QUERY_TOOL_NAME) {
-          await onProgress?.(describeToolCall(call.name));
-          const text = await hub.call(String(input.source ?? ""), String(input.tool ?? ""), parseHubArgs(input.argsJson));
-          return { type: "tool_result", tool_use_id: call.id, content: truncate(text, 8000) };
-        }
         await onProgress?.(describeToolCall(call.name));
+        // Recall + hub go through the shared typed dispatcher (same as Gemini);
+        // everything else is a GitHub MCP tool, handled by the bridge, whose
+        // is_error flag already gives Claude a first-class success/failure signal.
+        const shared = await dispatchSharedTool(call.name, input, deps);
+        if (shared) {
+          return {
+            type: "tool_result",
+            tool_use_id: call.id,
+            content: truncate(formatEvidenceResult(shared), 8000),
+            is_error: shared.status === "error" ? true : undefined,
+          };
+        }
         const { text, isError } = await bridge.callTool(call.name, input);
         return { type: "tool_result", tool_use_id: call.id, content: truncate(text, 8000), is_error: isError };
       }),

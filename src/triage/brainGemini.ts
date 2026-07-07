@@ -3,16 +3,6 @@ import type { Content, FunctionDeclaration, Part } from "@google/genai";
 import type { AppConfig } from "../config.js";
 import { TRIAGE_SYSTEM_PROMPT, buildTriageUserMessage } from "./prompt.js";
 import { TriageResultSchema, type TriageRequest, type TriageResult } from "./types.js";
-import {
-  listRecentCommits,
-  getCommit,
-  getFileContents,
-  listRecentPullRequests,
-  listOpenIssues,
-  listRecentDeployments,
-  listRecentWorkflowRuns,
-  searchCode,
-} from "../github/evidence.js";
 import { IncidentMemory } from "../memory/store.js";
 import type { RecallHit } from "../memory/types.js";
 import {
@@ -22,10 +12,16 @@ import {
   HUB_QUERY_TOOL_DESCRIPTION,
   HUB_QUERY_TOOL_NAME,
   parseEvidenceServers,
-  parseHubArgs,
 } from "../mcp/evidenceHub.js";
 import type { ProgressFn } from "./types.js";
-import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, formatRecallResult, toPriorIncidents } from "./recall.js";
+import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, toPriorIncidents } from "./recall.js";
+import {
+  dispatchGithubRestTool,
+  dispatchSharedTool,
+  evidenceError,
+  formatEvidenceResult,
+  type EvidenceDeps,
+} from "./evidenceTools.js";
 import { describeToolCall } from "./progress.js";
 import { withRetry } from "../util/retry.js";
 
@@ -183,60 +179,17 @@ const HUB_TOOLS: FunctionDeclaration[] = [
   },
 ];
 
-/** Run one evidence tool and return a text result for the model. */
-async function runEvidenceTool(
-  config: AppConfig,
-  repo: string,
-  memory: IncidentMemory,
-  collectedHits: RecallHit[],
-  hub: EvidenceHub,
-  name: string,
-  args: Record<string, unknown>,
-): Promise<string> {
-  try {
-    if (name === "list_recent_commits") {
-      const path = typeof args.path === "string" && args.path.length > 0 ? args.path : undefined;
-      const commits = await listRecentCommits(config, repo, Number(args.perPage) || 12, path);
-      return JSON.stringify(commits);
-    }
-    if (name === "list_recent_deployments") {
-      return JSON.stringify(await listRecentDeployments(config, repo, Number(args.perPage) || 5));
-    }
-    if (name === "list_recent_workflow_runs") {
-      return JSON.stringify(await listRecentWorkflowRuns(config, repo, Number(args.perPage) || 10));
-    }
-    if (name === "get_commit") {
-      return JSON.stringify(await getCommit(config, repo, String(args.sha)));
-    }
-    if (name === "get_file_contents") {
-      return await getFileContents(config, repo, String(args.path));
-    }
-    if (name === "list_recent_pull_requests") {
-      const state = args.state === "open" || args.state === "all" ? args.state : "closed";
-      const prs = await listRecentPullRequests(config, repo, state, Number(args.perPage) || 10);
-      return JSON.stringify(prs);
-    }
-    if (name === "list_open_issues") {
-      return JSON.stringify(await listOpenIssues(config, repo, Number(args.perPage) || 10));
-    }
-    if (name === "search_code") {
-      return JSON.stringify(await searchCode(config, repo, String(args.query)));
-    }
-    if (name === RECALL_TOOL_NAME) {
-      const hits = await memory.recall(String(args.query ?? ""), undefined, repo);
-      collectedHits.push(...hits);
-      return formatRecallResult(hits);
-    }
-    if (name === HUB_LIST_TOOL_NAME) {
-      return JSON.stringify(await hub.sources());
-    }
-    if (name === HUB_QUERY_TOOL_NAME) {
-      return hub.call(String(args.source ?? ""), String(args.tool ?? ""), parseHubArgs(args.argsJson));
-    }
-    return `Unknown tool: ${name}`;
-  } catch (err) {
-    return `Tool "${name}" failed: ${err instanceof Error ? err.message : String(err)}`;
-  }
+/**
+ * Run one tool through the shared, typed dispatcher and return the JSON envelope
+ * the model sees. Shared tools (recall/hub) first, then the GitHub REST tools;
+ * an unrecognised name is a typed error, not a silent guess.
+ */
+async function runEvidenceTool(deps: EvidenceDeps, name: string, args: Record<string, unknown>): Promise<string> {
+  const result =
+    (await dispatchSharedTool(name, args, deps)) ??
+    (await dispatchGithubRestTool(name, args, deps)) ??
+    evidenceError(name, `unknown tool: ${name}`);
+  return formatEvidenceResult(result);
 }
 
 /** Coerce Gemini's args into a valid TriageResult (fill optional fields). */
@@ -269,6 +222,7 @@ export async function runTriageGemini(
   // The Evidence Hub's generic tools only register when sources are configured
   // — no tool noise for a GitHub-only setup.
   const hub = new EvidenceHub(parseEvidenceServers(config.EVIDENCE_MCP_SERVERS));
+  const deps: EvidenceDeps = { config, repo, memory, hub, collectedHits };
   const functionDeclarations = [...EVIDENCE_TOOLS, ...(hub.enabled ? HUB_TOOLS : []), SUBMIT_TOOL];
   const contents: Content[] = [{ role: "user", parts: [{ text: buildTriageUserMessage(req, repo) }] }];
 
@@ -314,15 +268,7 @@ export async function runTriageGemini(
     const responseParts: Part[] = await Promise.all(
       calls.map(async (call) => {
         await onProgress?.(describeToolCall(call.name));
-        const text = await runEvidenceTool(
-          config,
-          repo,
-          memory,
-          collectedHits,
-          hub,
-          call.name ?? "",
-          (call.args as Record<string, unknown>) ?? {},
-        );
+        const text = await runEvidenceTool(deps, call.name ?? "", (call.args as Record<string, unknown>) ?? {});
         return { functionResponse: { name: call.name ?? "", response: { result: text } } };
       }),
     );

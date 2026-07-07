@@ -11,21 +11,24 @@ export const RECALL_TOOL_NAME = "recall_incident_memory";
 export const RECALL_TOOL_DESCRIPTION =
   "Search the org's past resolved incidents for ones similar to this report (returns symptom, root cause, what actually fixed it, who fixed it, and a similarity score). ALWAYS call this first — if this incident resembles a past one, that is your strongest lead.";
 
+/** The recalled incidents as plain objects for the model (empty array = nothing found). */
+export function recallToModel(hits: RecallHit[]): Array<Record<string, unknown>> {
+  return hits.map((h) => ({
+    id: h.record.id,
+    symptom: h.record.symptom,
+    rootCause: h.record.rootCause,
+    resolution: h.record.resolution,
+    resolvedBy: h.record.resolvedBy,
+    similarity: Number(h.score.toFixed(3)),
+    matchedBy: h.method,
+    repo: h.record.repo,
+    links: h.record.links,
+  }));
+}
+
 /** The JSON payload the model sees for a recall call. */
 export function formatRecallResult(hits: RecallHit[]): string {
-  return JSON.stringify(
-    hits.map((h) => ({
-      id: h.record.id,
-      symptom: h.record.symptom,
-      rootCause: h.record.rootCause,
-      resolution: h.record.resolution,
-      resolvedBy: h.record.resolvedBy,
-      similarity: Number(h.score.toFixed(3)),
-      matchedBy: h.method,
-      repo: h.record.repo,
-      links: h.record.links,
-    })),
-  );
+  return JSON.stringify(recallToModel(hits));
 }
 
 /**
