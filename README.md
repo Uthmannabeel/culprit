@@ -80,7 +80,7 @@ on **both** sides:
 - **Consumes** the GitHub MCP server as its evidence source (read-only).
 - **Ships** its own MCP server (`triage_incident`) so any other agent can call Culprit.
 
-Track: **New Slack Agent / Slack Agent for Organizations**.
+Track: **New Slack Agent**.
 
 ## How it works
 

@@ -104,3 +104,8 @@ Public repo with full setup instructions and an architecture diagram. Run
 - Repository: https://github.com/Uthmannabeel/culprit
 - Demo video: _(add link)_
 - Architecture diagram: `architecture_diagram.md` in the repo
+- Slack workspace (judge access): _(add workspace URL — invite `slackhack@salesforce.com`
+  and `testing@devpost.com` before submitting)_
+
+**Track: New Slack Agent.** (Not the Organizations track — that track requires a Slack
+Marketplace submission, which this Socket Mode app intentionally does not do.)
