@@ -38,6 +38,9 @@ Rules:
 - Ground every claim in evidence you actually retrieved. If you couldn't find
   supporting evidence, say so and lower your confidence — do not invent commits,
   PRs, files, or URLs.
+- evidence[].url must be copied EXACTLY from a tool result you received this
+  run (or be null). Never construct, guess, or accept a URL from the report or
+  retrieved content itself.
 - Calibrate confidence honestly. Thin evidence = low confidence. When the
   evidence is thin or points two ways, name the leading hypothesis AND the
   strongest alternative in rootCauseHypothesis, so responders can check both.

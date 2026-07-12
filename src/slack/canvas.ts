@@ -1,9 +1,7 @@
 import type { WebClient } from "@slack/web-api";
 import type { IncidentRecord } from "../memory/types.js";
 import type { TriageResult } from "../triage/types.js";
-import { SEVERITY_LABEL, confidenceLabel, mdSafe, safeHttpUrl, similarityLabel } from "./format.js";
-
-export { mdSafe, safeHttpUrl } from "./format.js";
+import { SEVERITY_LABEL, confidenceLabel, evidenceLinkUrl, mdSafe, safeHttpUrl, similarityLabel } from "./format.js";
 
 /**
  * The living incident canvas. Culprit opens a Slack Canvas when it posts a
@@ -54,7 +52,7 @@ export function buildIncidentCanvasMarkdown(
     lines.push("");
     lines.push("## Evidence");
     result.evidence.slice(0, 8).forEach((e, i) => {
-      const url = safeHttpUrl(e.url);
+      const url = evidenceLinkUrl(e.kind, e.url);
       const title = url ? `[${mdSafe(e.title)}](${url})` : mdSafe(e.title);
       lines.push(`${i + 1}. ${title} — ${mdSafe(e.why)}`);
     });
@@ -114,22 +112,24 @@ export async function createIncidentCanvas(
     const canvasId = res.canvas_id;
     if (!canvasId) return null;
 
-    if (args.channel) {
-      await client.canvases.access
-        .set({ canvas_id: canvasId, channel_ids: [args.channel], access_level: "read" })
-        .catch(() => undefined);
-    }
-    // Canvases are file-backed; try to surface a clickable permalink.
-    const url = await client.files
-      .info({ file: canvasId })
-      .then((f) => (f.file as { permalink?: string } | undefined)?.permalink ?? null)
-      .catch(() => null);
+    // Access grant and permalink lookup are independent — run them together.
+    const [, url] = await Promise.all([
+      args.channel
+        ? client.canvases.access
+            .set({ canvas_id: canvasId, channel_ids: [args.channel], access_level: "read" })
+            .catch(() => undefined)
+        : Promise.resolve(undefined),
+      // Canvases are file-backed; try to surface a clickable permalink.
+      client.files
+        .info({ file: canvasId })
+        .then((f) => (f.file as { permalink?: string } | undefined)?.permalink ?? null)
+        .catch(() => null),
+    ]);
 
     return { canvasId, url };
   } catch (err) {
     // Canvas is best-effort, but make the reason diagnosable (e.g. free-plan
     // workspaces can't create standalone canvases; missing canvases:write).
-    // eslint-disable-next-line no-console
     console.error("[canvas-create]", err instanceof Error ? err.message : err);
     return null;
   }
@@ -144,7 +144,6 @@ export async function appendResolution(client: WebClient, canvasId: string, mark
     });
     return true;
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error("[canvas-append]", err instanceof Error ? err.message : err);
     return false;
   }

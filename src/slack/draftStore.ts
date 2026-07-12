@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { DraftIssue } from "../github/issues.js";
+import type { ResolveContext } from "./resolve.js";
 
 /**
  * Slack hard-caps a button's `value` at 2000 characters, and a drafted issue
@@ -53,6 +54,45 @@ export function decodeIssuePayload(value: string | undefined): IssuePayload | nu
 }
 
 /**
+ * The Log-resolution button rides the same 2000-char cap — a verbose
+ * hypothesis plus a long model-generated URL plus JSON-escaping overhead can
+ * exceed it, and ONE invalid element rejects the whole verdict card. Same
+ * inline-or-spill strategy as the issue payload.
+ */
+const storedResolve = new Map<string, ResolveContext>();
+
+export function encodeResolveContext(ctx: ResolveContext): string {
+  const inline = JSON.stringify(ctx);
+  if (inline.length <= MAX_INLINE_VALUE) return inline;
+
+  const id = randomUUID();
+  storedResolve.set(id, ctx);
+  if (storedResolve.size > MAX_STORED) {
+    const oldest = storedResolve.keys().next().value;
+    if (oldest) storedResolve.delete(oldest);
+  }
+  return JSON.stringify({ resolveId: id });
+}
+
+/** Null when malformed or when the spilled context died with a restart. */
+export function decodeResolveContext(value: string | undefined): ResolveContext | null {
+  if (!value) return null;
+  try {
+    const parsed = JSON.parse(value) as Partial<ResolveContext> & { resolveId?: string };
+    if (parsed.resolveId) {
+      const hit = storedResolve.get(parsed.resolveId);
+      return hit ? { ...hit } : null;
+    }
+    if (typeof parsed.symptom === "string" && typeof parsed.hypothesis === "string") {
+      return parsed as ResolveContext;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Idempotency for the Create-issue button: Slack can't disable a clicked
  * button, so a double-click would file the issue twice. Track what's been
  * filed (keyed by the button's raw value, unique per card) and short-circuit
@@ -60,6 +100,8 @@ export function decodeIssuePayload(value: string | undefined): IssuePayload | nu
  */
 const filed = new Map<string, string>();
 const MAX_FILED = 500;
+/** Bound for the duplicate-warning set below — its own name, not a borrowed one. */
+const MAX_WARNED = 500;
 
 export function markFiled(value: string | undefined, issueUrl: string): void {
   if (!value) return;
@@ -84,7 +126,7 @@ const warned = new Set<string>();
 export function markDuplicateWarned(value: string | undefined): void {
   if (!value) return;
   warned.add(value);
-  if (warned.size > MAX_FILED) {
+  if (warned.size > MAX_WARNED) {
     const oldest = warned.values().next().value;
     if (oldest) warned.delete(oldest);
   }
@@ -97,6 +139,7 @@ export function wasDuplicateWarned(value: string | undefined): boolean {
 /** Test hook: reset the in-process stores. */
 export function clearDraftStore(): void {
   stored.clear();
+  storedResolve.clear();
   filed.clear();
   warned.clear();
 }

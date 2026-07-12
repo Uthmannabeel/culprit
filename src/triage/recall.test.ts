@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { formatRecallResult, toPriorIncidents } from "./recall.js";
+import { recallToModel, toPriorIncidents } from "./recall.js";
 import type { RecallHit } from "../memory/types.js";
 import type { IncidentRecord } from "../memory/types.js";
 
@@ -32,9 +32,9 @@ describe("toPriorIncidents", () => {
   });
 });
 
-describe("formatRecallResult", () => {
+describe("recallToModel", () => {
   test("exposes resolution, who, and how it matched to the model", () => {
-    const json = JSON.parse(formatRecallResult([hit("a", 0.77, "lexical")])) as Array<Record<string, unknown>>;
-    expect(json[0]).toMatchObject({ id: "a", resolution: "fix a", resolvedBy: "dana", similarity: 0.77, matchedBy: "lexical" });
+    const [first] = recallToModel([hit("a", 0.77, "lexical")]);
+    expect(first).toMatchObject({ id: "a", resolution: "fix a", resolvedBy: "dana", similarity: 0.77, matchedBy: "lexical" });
   });
 });

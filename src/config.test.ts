@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { isIssueRepoAllowed } from "./config.js";
+import { isAuthorizedUser, isIssueRepoAllowed } from "./config.js";
 import type { AppConfig } from "./config.js";
 
 function cfg(over: Partial<AppConfig>): AppConfig {
@@ -23,5 +23,20 @@ describe("isIssueRepoAllowed", () => {
 
   test("is unrestricted only when nothing is configured", () => {
     expect(isIssueRepoAllowed(cfg({}), "anyone/anything")).toBe(true);
+  });
+});
+
+describe("isAuthorizedUser", () => {
+  test("everyone is authorized when no allowlist is set (demo default)", () => {
+    expect(isAuthorizedUser(cfg({}), "U1")).toBe(true);
+    expect(isAuthorizedUser(cfg({ AUTHORIZED_USERS: "  " }), undefined)).toBe(true);
+  });
+
+  test("with an allowlist, only listed users pass — unknown users and missing ids fail", () => {
+    const c = cfg({ AUTHORIZED_USERS: "U0AAA, U0BBB" });
+    expect(isAuthorizedUser(c, "U0AAA")).toBe(true);
+    expect(isAuthorizedUser(c, "U0BBB")).toBe(true);
+    expect(isAuthorizedUser(c, "U0EVIL")).toBe(false);
+    expect(isAuthorizedUser(c, undefined)).toBe(false);
   });
 });

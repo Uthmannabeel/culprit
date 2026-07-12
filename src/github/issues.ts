@@ -1,5 +1,9 @@
 import type { AppConfig } from "../config.js";
 import { lexicalSimilarity } from "../memory/similarity.js";
+import { ghHeaders, splitRepo } from "./common.js";
+
+/** Titles this lexically similar to an open issue trigger the duplicate warning. */
+const DUPLICATE_TITLE_THRESHOLD = 0.35;
 
 export interface DraftIssue {
   title: string;
@@ -22,7 +26,7 @@ export function findSimilarIssue<T extends { title: string }>(issues: T[], draft
       bestScore = score;
     }
   }
-  return bestScore >= 0.35 ? best : null;
+  return bestScore >= DUPLICATE_TITLE_THRESHOLD ? best : null;
 }
 
 export interface CreatedIssue {
@@ -40,17 +44,11 @@ export async function createGithubIssue(
   repo: string,
   draft: DraftIssue,
 ): Promise<CreatedIssue> {
-  const [owner, name] = repo.split("/");
-  if (!owner || !name) throw new Error(`Invalid repo "${repo}" — expected owner/repo`);
+  const [owner, name] = splitRepo(repo);
 
   const res = await fetch(`https://api.github.com/repos/${owner}/${name}/issues`, {
     method: "POST",
-    headers: {
-      Authorization: `Bearer ${config.GITHUB_TOKEN}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "Content-Type": "application/json",
-    },
+    headers: ghHeaders(config, { "Content-Type": "application/json" }),
     body: JSON.stringify({ title: draft.title, body: draft.body, labels: draft.labels }),
   });
 

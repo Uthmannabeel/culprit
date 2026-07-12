@@ -14,6 +14,16 @@ export interface BridgedTool {
 }
 
 /**
+ * The agentic loop is read-only by design — writes happen only via the
+ * human-clicked Create-issue button (REST, allowlisted). The GitHub MCP server
+ * advertises write tools too (create_issue, push_files, …), so we ENFORCE the
+ * invariant here instead of trusting the prompt: only tools whose names match
+ * this pattern are exposed to the model. Otherwise a prompt-injected commit
+ * message could steer the model into writing to a repo mid-triage.
+ */
+const READONLY_TOOL_NAME = /^(get_|list_|search_|read_)/;
+
+/**
  * Connects to the GitHub MCP server and bridges its tools into our agentic
  * loop. We consume MCP here (the "context source"); elsewhere we expose our own
  * MCP server — consume on one side, ship on the other.
@@ -50,11 +60,13 @@ export class GitHubMcpBridge {
 
     this.client = client;
     const listed = await client.listTools();
-    this.tools = listed.tools.map((t) => ({
-      name: t.name,
-      description: t.description ?? "",
-      input_schema: (t.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
-    }));
+    this.tools = listed.tools
+      .filter((t) => READONLY_TOOL_NAME.test(t.name))
+      .map((t) => ({
+        name: t.name,
+        description: t.description ?? "",
+        input_schema: (t.inputSchema as Record<string, unknown>) ?? { type: "object", properties: {} },
+      }));
   }
 
   /** Tools available for Claude to call, as Anthropic tool definitions. */
@@ -68,6 +80,11 @@ export class GitHubMcpBridge {
    */
   async callTool(name: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
     if (!this.client) throw new Error("GitHubMcpBridge.connect() must be called first");
+    // Defence in depth: even a hallucinated call to an unlisted write tool
+    // must not reach the server.
+    if (!READONLY_TOOL_NAME.test(name)) {
+      return { text: `Tool "${name}" is not available (read-only evidence gathering).`, isError: true };
+    }
     try {
       const result = await this.client.callTool({ name, arguments: args });
       const text = extractText(result.content);

@@ -64,6 +64,14 @@ const EnvSchema = z
     // top-level message posted there — e.g. by a Sentry/PagerDuty webhook — is
     // auto-triaged without needing an @mention.
     ALERT_CHANNELS: z.string().optional(),
+    // Optional: restrict auto-triage in alert channels to these bot IDs
+    // (comma-separated, e.g. your Sentry webhook bot). Empty = any top-level post.
+    ALERT_BOT_IDS: z.string().optional(),
+
+    // Optional: Slack user IDs (comma-separated) allowed to take privileged
+    // actions — file issues, log resolutions, and forget memories. Empty =
+    // everyone (fine for a single-user/demo workspace; set it in shared ones).
+    AUTHORIZED_USERS: z.string().optional(),
 
     // Cap on simultaneous triages across the workspace, so a burst of mentions
     // can't exhaust the LLM quota mid-incident.
@@ -107,6 +115,20 @@ export function isIssueRepoAllowed(config: AppConfig, repo: string): boolean {
     if (trimmed) allowed.add(trimmed);
   }
   return allowed.size === 0 || allowed.has(repo.toLowerCase());
+}
+
+/**
+ * Whether a Slack user may take privileged actions (file issues, log
+ * resolutions, forget memories). No allowlist configured = everyone may —
+ * the single-user/demo default, documented in LIMITATIONS.md.
+ */
+export function isAuthorizedUser(config: AppConfig, userId: string | undefined): boolean {
+  const allowed = (config.AUTHORIZED_USERS ?? "")
+    .split(",")
+    .map((u) => u.trim())
+    .filter(Boolean);
+  if (allowed.length === 0) return true;
+  return Boolean(userId && allowed.includes(userId));
 }
 
 /** Parse and cache the environment. Throws a readable error if invalid. */

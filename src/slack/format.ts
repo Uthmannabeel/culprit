@@ -80,3 +80,24 @@ export function safeHttpUrl(url: string | null | undefined): string | null {
     return null;
   }
 }
+
+/** Evidence kinds whose URLs must actually point at GitHub. */
+const GITHUB_KINDS = new Set(["commit", "pull_request", "issue", "file"]);
+
+/**
+ * Validate a model-supplied evidence URL before rendering it as a link. The
+ * URL field comes straight out of the model's verdict, so under prompt
+ * injection it could label a phishing link "commit abc123". For GitHub-kind
+ * evidence we require a github.com host; other kinds (past_incident, other —
+ * e.g. an Evidence Hub source) just need to be well-formed http(s).
+ */
+export function evidenceLinkUrl(kind: string, url: string | null | undefined): string | null {
+  const safe = safeHttpUrl(url);
+  if (!safe || !GITHUB_KINDS.has(kind)) return safe;
+  try {
+    const host = new URL(safe).hostname.toLowerCase();
+    return host === "github.com" || host.endsWith(".github.com") ? safe : null;
+  } catch {
+    return null;
+  }
+}

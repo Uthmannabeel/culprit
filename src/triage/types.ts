@@ -22,7 +22,13 @@ export const TriageResultSchema = z.object({
       z.object({
         kind: z.enum(["commit", "pull_request", "issue", "file", "past_incident", "other"]),
         title: z.string(),
-        url: z.string().nullable(),
+        // Gemini's tool schema declares url nullable-but-optional and the model
+        // routinely omits non-required keys — a missing url must not reject an
+        // otherwise-complete verdict after the investigation already succeeded.
+        url: z
+          .string()
+          .nullish()
+          .transform((v) => v ?? null),
         why: z.string(),
       }),
     )
@@ -72,3 +78,7 @@ export interface TriageRequest {
 
 /** Optional progress callback so the Slack handler can stream status updates. */
 export type ProgressFn = (note: string) => void | Promise<void>;
+
+/** Shared error messages — both brains throw the same words for the same failure. */
+export const ERR_NO_REPO = "No repository specified and GITHUB_DEFAULT_REPO is not set.";
+export const ERR_NO_CONVERGE = "Triage did not converge on a verdict within the step budget.";

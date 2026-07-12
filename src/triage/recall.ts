@@ -26,11 +26,6 @@ export function recallToModel(hits: RecallHit[]): Array<Record<string, unknown>>
   }));
 }
 
-/** The JSON payload the model sees for a recall call. */
-export function formatRecallResult(hits: RecallHit[]): string {
-  return JSON.stringify(recallToModel(hits));
-}
-
 /**
  * Build the reliable priorIncidents panel from whatever recall surfaced —
  * deduped by id (keeping the best score) and sorted strongest-first. Attached to

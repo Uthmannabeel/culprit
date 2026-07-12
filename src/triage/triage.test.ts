@@ -29,6 +29,17 @@ describe("TriageResultSchema", () => {
   test("rejects an unknown severity", () => {
     expect(() => TriageResultSchema.parse({ ...sample, severity: "catastrophic" })).toThrow();
   });
+
+  test("accepts an evidence item with NO url key — Gemini omits non-required fields", () => {
+    // Regression: Gemini's tool schema marks url optional; a missing key used to
+    // throw AFTER a successful investigation, losing the whole verdict.
+    const verdict = {
+      ...sample,
+      evidence: [{ kind: "other", title: "no recent deploys found", why: "checked deployments" }],
+    };
+    const parsed = TriageResultSchema.parse(verdict);
+    expect(parsed.evidence[0]?.url).toBeNull();
+  });
 });
 
 describe("renderTriageBlocks", () => {
@@ -108,12 +119,30 @@ describe("renderTriageBlocks", () => {
     const withPipe = renderTriageBlocks(
       {
         ...sample,
-        evidence: [{ kind: "commit", title: "fix: a | b | c", url: "https://x/commit/1", why: "contains pipes" }],
+        evidence: [{ kind: "commit", title: "fix: a | b | c", url: "https://github.com/o/r/commit/1", why: "contains pipes" }],
       },
       "o/r",
     );
     const text = JSON.stringify(withPipe);
     expect(text).toContain("fix: a / b / c"); // pipes neutralised in the link label
+  });
+
+  test("GitHub-kind evidence pointing off-GitHub renders unlinked (spoof guard)", () => {
+    const spoofed = renderTriageBlocks(
+      {
+        ...sample,
+        evidence: [{ kind: "commit", title: "commit abc123 in o/r", url: "https://evil.example/phish", why: "spoofed" }],
+      },
+      "o/r",
+    );
+    const text = JSON.stringify(spoofed);
+    expect(text).not.toContain("evil.example");
+    expect(text).toContain("commit abc123 in o/r");
+  });
+
+  test("previews the draft-issue body so the human sees what the button files", () => {
+    const text = JSON.stringify(renderTriageBlocks(sample, "o/r"));
+    expect(text).toContain("## Summary"); // first lines of the body are visible
   });
 
   test("keeps every button value under Slack's 2000-char limit even for huge drafts", () => {
@@ -122,6 +151,27 @@ describe("renderTriageBlocks", () => {
       "o/r",
     );
     const actions = huge.find((b) => b.type === "actions") as { elements: { value?: string }[] };
+    for (const el of actions.elements) {
+      expect((el.value ?? "").length).toBeLessThanOrEqual(2000);
+    }
+  });
+
+  test("the resolve button survives quote-dense reports and long URLs (JSON escaping doubles them)", () => {
+    // Regression: the resolve button was raw JSON.stringify — a pasted JSON log
+    // (quotes + backslashes) plus a long evidence URL could blow the 2000 cap
+    // and reject the ENTIRE card after a successful triage.
+    const nasty = renderTriageBlocks(
+      {
+        ...sample,
+        rootCauseHypothesis: '{"error":"payment \\"key\\" missing","path":"C:\\\\prod\\\\config"} '.repeat(20),
+        evidence: [
+          { kind: "commit", title: "c", url: `https://github.com/o/r/commit/${"a".repeat(40)}?trace=${"y".repeat(900)}`, why: "w" },
+        ],
+      },
+      "o/r",
+      '{"log":"checkout \\"500\\" at C:\\\\srv\\\\app"} '.repeat(10),
+    );
+    const actions = nasty.find((b) => b.type === "actions") as { elements: { value?: string }[] };
     for (const el of actions.elements) {
       expect((el.value ?? "").length).toBeLessThanOrEqual(2000);
     }

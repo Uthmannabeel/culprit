@@ -1,12 +1,15 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { AppConfig } from "../config.js";
 import {
+  getFileContents,
+  listRecentCommits,
   listRecentPullRequests,
   listOpenIssues,
   listRecentDeployments,
   listRecentWorkflowRuns,
   searchCode,
 } from "./evidence.js";
+import { splitRepo } from "./common.js";
 
 const config = { GITHUB_TOKEN: "test-token" } as AppConfig;
 
@@ -92,6 +95,50 @@ describe("searchCode", () => {
 
     const matches = await searchCode(config, "o/r", "payments");
     expect(matches).toEqual([{ path: "src/payments.js", url: "https://github.com/o/r/blob/HEAD/src/payments.js" }]);
+  });
+});
+
+describe("splitRepo", () => {
+  test("accepts owner/repo and encodes the segments", () => {
+    expect(splitRepo("acme/store")).toEqual(["acme", "store"]);
+  });
+
+  test("rejects path/query injection shapes", () => {
+    expect(() => splitRepo("acme")).toThrow(/expected owner\/repo/);
+    expect(() => splitRepo("acme/store/extra")).toThrow(/expected owner\/repo/);
+    expect(() => splitRepo("acme?per_page=100/store")).toThrow(/expected owner\/repo/);
+    expect(() => splitRepo("../etc/passwd")).toThrow(/expected owner\/repo/);
+  });
+});
+
+describe("getFileContents sensitive-path guard", () => {
+  test("refuses secret-looking paths before any network call", async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    for (const path of [".env", "config/.env.production", "secrets/api.json", "certs/server.pem", "keys/id_rsa"]) {
+      await expect(getFileContents(config, "o/r", path)).rejects.toThrow(/sensitive-looking path/);
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+
+  test("ordinary source paths still read", async () => {
+    mockFetchJson({ content: Buffer.from("const x = 1;").toString("base64"), encoding: "base64" });
+    await expect(getFileContents(config, "o/r", "src/environment.ts")).resolves.toContain("const x = 1;");
+  });
+});
+
+describe("listRecentCommits", () => {
+  test("maps sha, first message line, author", async () => {
+    mockFetchJson([
+      {
+        sha: "c".repeat(40),
+        html_url: "https://github.com/o/r/commit/c",
+        commit: { message: "fix: rename key\n\nlong body", author: { date: "2026-06-25T00:00:00Z" } },
+        author: { login: "dana" },
+      },
+    ]);
+    const commits = await listRecentCommits(config, "o/r");
+    expect(commits[0]).toMatchObject({ sha: "cccccccccc", message: "fix: rename key", author: "dana" });
   });
 });
 

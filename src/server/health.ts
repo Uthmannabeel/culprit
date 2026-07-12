@@ -18,6 +18,11 @@ export function startHealthServer(port: number): Server {
     res.setHeader("content-type", "application/json");
     res.end(JSON.stringify(buildHealthPayload(startedAt)));
   });
+  // A liveness endpoint must never take the bot down: an unhandled 'error'
+  // event (e.g. EADDRINUSE after a crashed prior instance) would throw.
+  server.on("error", (err) => {
+    console.error("[health] server error:", err instanceof Error ? err.message : err);
+  });
   server.listen(port);
   return server;
 }

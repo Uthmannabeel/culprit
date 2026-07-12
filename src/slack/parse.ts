@@ -11,9 +11,16 @@
  */
 export function parseRepo(text: string, fallback?: string): string | undefined {
   const explicit = text.match(/\brepo:([^/\s>|]+\/[^/\s>|]+)/i);
-  if (explicit) return explicit[1];
-  const url = text.match(/github\.com\/([^/\s>|]+\/[^/\s>|]+)/i);
-  if (url) return url[1];
+  const url = explicit ? null : text.match(/github\.com\/([^/\s>|]+\/[^/\s>|]+)/i);
+  const candidate = explicit?.[1] ?? url?.[1];
+  if (candidate) {
+    // "repo:acme/store." (sentence-final punctuation) must not become a repo
+    // named "store." — every GitHub call would 404 with a baffling failure.
+    const cleaned = candidate.replace(/[.,;:!?)\]]+$/, "");
+    // GitHub owner/repo names are a narrow charset; anything else is noise
+    // (and unencoded, it would inject into the REST path).
+    if (/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(cleaned)) return cleaned;
+  }
   return fallback;
 }
 
@@ -35,17 +42,21 @@ export function formatThreadContext(
   maxMessages = 12,
   maxTotal = 2500,
 ): string {
+  // Walk NEWEST-first: in a long thread the freshest messages (right before
+  // the @mention) carry the richest clues, so when the budget runs out it must
+  // be the oldest messages that fall off — not the newest.
   const lines: string[] = [];
   let total = 0;
-  for (const m of messages) {
-    if (!m.text || m.ts === triggerTs) continue;
+  for (let i = messages.length - 1; i >= 0; i--) {
+    const m = messages[i];
+    if (!m?.text || m.ts === triggerTs) continue;
     const line = stripMentions(m.text).slice(0, 300);
     if (!line) continue;
-    if (total + line.length > maxTotal) break;
+    if (total + line.length > maxTotal || lines.length >= maxMessages) break;
     lines.push(`- ${line}`);
     total += line.length;
   }
-  return lines.slice(-maxMessages).join("\n");
+  return lines.reverse().join("\n");
 }
 
 /** Memory-management commands a user can send instead of an incident report. */
@@ -54,13 +65,13 @@ export type MemoryCommand = { type: "stats" } | { type: "forget"; id: string };
 export function parseMemoryCommand(report: string): MemoryCommand | null {
   const normalized = report.trim().toLowerCase();
   if (normalized === "memory" || normalized === "stats") return { type: "stats" };
-  const forget = report.trim().match(/^forget\s+(\S+)$/i);
-  if (forget) return { type: "forget", id: forget[1]! };
+  const id = report.trim().match(/^forget\s+(\S+)$/i)?.[1];
+  if (id) return { type: "forget", id };
   return null;
 }
 
-/** Parse the comma-separated ALERT_CHANNELS config into a lookup set. */
-export function parseAlertChannels(raw: string | undefined): Set<string> {
+/** Parse a comma-separated id list (channel ids, bot ids, …) into a lookup set. */
+export function parseIdList(raw: string | undefined): Set<string> {
   return new Set(
     (raw ?? "")
       .split(",")
@@ -69,20 +80,29 @@ export function parseAlertChannels(raw: string | undefined): Set<string> {
   );
 }
 
+/** The ALERT_CHANNELS config, as a lookup set. */
+export const parseAlertChannels = parseIdList;
+
 /**
  * Should a channel message trigger an automatic triage? Only top-level
  * messages in a configured alert channel, never our own posts (loop guard),
  * and never empty text. This is what turns Culprit from reactive-only into an
  * agent that meets alerts where they land.
+ *
+ * When `allowedBotIds` is non-empty, ONLY posts from those bot ids trigger —
+ * auto-triage is a human-free path into the LLM, so operators can pin it to
+ * their known webhook bots (Sentry, PagerDuty) instead of anything posted there.
  */
 export function shouldAutoTriage(
   msg: { channel: string; channel_type?: string; thread_ts?: string; bot_id?: string; text?: string },
   alertChannels: Set<string>,
   selfBotId: string | undefined,
+  allowedBotIds?: Set<string>,
 ): boolean {
   if (alertChannels.size === 0 || !alertChannels.has(msg.channel)) return false;
   if (msg.channel_type !== "channel" && msg.channel_type !== "group") return false;
   if (msg.thread_ts) return false; // replies (incl. our own verdicts) never re-trigger
   if (msg.bot_id && selfBotId && msg.bot_id === selfBotId) return false;
+  if (allowedBotIds && allowedBotIds.size > 0 && (!msg.bot_id || !allowedBotIds.has(msg.bot_id))) return false;
   return Boolean(msg.text && msg.text.trim().length > 0);
 }

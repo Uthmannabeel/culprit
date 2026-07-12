@@ -36,9 +36,11 @@ PII scrubbing. Operators should treat the incidents file as sensitive data.
 - **It compounds through use.** If nobody clicks *Log resolution*, Culprit stays
   amnesiac. `npm run import:issues` softens the cold start by importing closed GitHub
   issues as recallable prior reports (without inventing resolutions).
-- **It's trust-on-write.** Any workspace member can log a resolution; there is no
-  verification of truth. Moderation exists (`@Culprit memory` to inspect,
-  `@Culprit forget <id>` to remove) but no approval workflow.
+- **It's trust-on-write.** Logged resolutions are not verified for truth. By default any
+  workspace member can log one; setting `AUTHORIZED_USERS` restricts logging,
+  issue-filing, and `forget` to listed Slack user IDs. Moderation exists
+  (`@Culprit memory` to inspect, `@Culprit forget <id>` to remove) but no approval
+  workflow.
 - **Similarity is symptom-based.** Rhyming symptoms can have different causes; the
   prompt treats recalls as leads to verify, not answers, but anchoring risk is real.
   Same-repo precedent is boosted and cross-repo matches are labeled with their origin,
@@ -72,7 +74,9 @@ multi-workspace tenancy. A real deployment would put memory behind a database.
   permissions on the write path.
 - **Alert ingestion is Slack-native only**: Culprit auto-triages messages landing in
   configured alert channels (`ALERT_CHANNELS`), which covers webhook-to-Slack setups
-  (Sentry/PagerDuty/Datadog → channel), but it has no direct API integrations.
+  (Sentry/PagerDuty/Datadog → channel), but it has no direct API integrations. Since
+  this path runs with no human trigger, `ALERT_BOT_IDS` can pin it to known webhook
+  bots so arbitrary posts in the channel can't drive the LLM.
 
 ## Smaller sharp edges
 
@@ -81,9 +85,15 @@ multi-workspace tenancy. A real deployment would put memory behind a database.
   titles for the same bug slip through, and re-running triage resets the warning state.
 - **Retries cover transient failures only** (rate-limit blips, network resets, overload)
   — a spent daily quota still fails, with a plain-language explanation.
-- **Slack Connect**: external-org members in shared channels can click buttons and log
-  resolutions — there is no workspace-membership gating. Write actions land in a local
-  JSONL audit trail (`AUDIT_LOG_PATH`), not a tamper-proof store.
+- **Slack Connect**: external-org members in shared channels can see cards; unless
+  `AUTHORIZED_USERS` is set, they can also click buttons and log resolutions. Write
+  actions land in a local JSONL audit trail (`AUDIT_LOG_PATH`), not a tamper-proof store.
+- **Prompt-injection defences are layered, not absolute**: the agentic loop is enforced
+  read-only (the GitHub MCP bridge exposes only `get_/list_/search_` tools), secret-like
+  paths are refused on file reads, GitHub-kind evidence links must point at github.com,
+  and the card previews the draft-issue body before filing — but retrieved text still
+  reaches the model, and a paid tier / private deployment is the right call for
+  sensitive repositories.
 - **No quality benchmark**: the App Home track record measures live outcomes, but there
   is no offline golden-set evaluation of hypothesis accuracy. A liveness endpoint exists
   (`HEALTH_PORT`) but no metrics beyond uptime.

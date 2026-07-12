@@ -14,7 +14,6 @@ export async function audit(config: AppConfig, action: string, details: Record<s
     await mkdir(dirname(config.AUDIT_LOG_PATH), { recursive: true });
     await appendFile(config.AUDIT_LOG_PATH, `${line}\n`, "utf8");
   } catch (err) {
-    // eslint-disable-next-line no-console
     console.error("[audit]", err instanceof Error ? err.message : err);
   }
 }

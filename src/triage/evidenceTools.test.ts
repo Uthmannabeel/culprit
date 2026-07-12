@@ -41,7 +41,7 @@ function makeDeps(over: Partial<EvidenceDeps> = {}): EvidenceDeps {
     config: {} as AppConfig,
     repo: "o/r",
     memory: { recall: vi.fn(async () => []) },
-    hub: { sources: vi.fn(async () => []), call: vi.fn(async () => "hub text") },
+    hub: { sources: vi.fn(async () => []), call: vi.fn(async () => ({ text: "hub text", isError: false })) },
     collectedHits: [],
     ...over,
   };
@@ -114,5 +114,17 @@ describe("dispatchSharedTool", () => {
     const q = await dispatchSharedTool("query_evidence_source", { source: "logs", tool: "search", argsJson: '{"q":"x"}' }, deps);
     expect(q).toMatchObject({ status: "ok", data: "hub text" });
     expect(await dispatchSharedTool("list_recent_commits", {}, deps)).toBeNull();
+  });
+
+  test("a hub failure surfaces as status:error — a down source must never read as clean", async () => {
+    const deps = makeDeps({
+      hub: {
+        sources: vi.fn(async () => []),
+        call: vi.fn(async () => ({ text: 'Evidence source "logs" tool "search" failed: 503', isError: true })),
+      },
+    });
+    const res = await dispatchSharedTool("query_evidence_source", { source: "logs", tool: "search" }, deps);
+    expect(res?.status).toBe("error");
+    expect(res?.note).toContain("failed: 503");
   });
 });

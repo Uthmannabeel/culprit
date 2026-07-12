@@ -69,7 +69,7 @@ async function connectHttpClient(server: EvidenceServerConfig): Promise<Client> 
 export class EvidenceHub {
   private readonly clients = new Map<string, Client>();
   private catalog: EvidenceSourceCatalog[] = [];
-  private connected = false;
+  private connecting: Promise<void> | null = null;
 
   constructor(
     private readonly servers: EvidenceServerConfig[],
@@ -81,24 +81,41 @@ export class EvidenceHub {
     return this.servers.length > 0;
   }
 
-  /** Connect every configured source, skipping (and logging) any that fail. */
-  private async connect(): Promise<void> {
-    if (this.connected) return;
-    this.connected = true;
-    for (const server of this.servers) {
-      try {
+  /**
+   * Connect every configured source, skipping (and logging) any that fail.
+   * Memoized as a promise: both brains fire a round's tool calls with
+   * Promise.all, so two concurrent hub calls must share ONE connect — a flag
+   * would let the second caller through with a half-empty catalog.
+   */
+  private connect(): Promise<void> {
+    this.connecting ??= this.doConnect();
+    return this.connecting;
+  }
+
+  private async doConnect(): Promise<void> {
+    // Connect sources concurrently — the first hub call pays the slowest
+    // handshake, not the sum of all of them.
+    const results = await Promise.allSettled(
+      this.servers.map(async (server) => {
         const client = await this.factory(server);
         const listed = await client.listTools();
-        this.clients.set(server.name, client);
-        this.catalog.push({
-          source: server.name,
-          tools: listed.tools.map((t) => ({ name: t.name, description: (t.description ?? "").slice(0, 300) })),
-        });
-      } catch (err) {
-        // eslint-disable-next-line no-console
-        console.error(`[evidence-hub] source "${server.name}" unavailable:`, err instanceof Error ? err.message : err);
+        return { server, client, listed };
+      }),
+    );
+    results.forEach((result, i) => {
+      const server = this.servers[i];
+      if (!server) return;
+      if (result.status === "rejected") {
+        const reason = result.reason instanceof Error ? result.reason.message : result.reason;
+        console.error(`[evidence-hub] source "${server.name}" unavailable:`, reason);
+        return;
       }
-    }
+      this.clients.set(server.name, result.value.client);
+      this.catalog.push({
+        source: server.name,
+        tools: result.value.listed.tools.map((t) => ({ name: t.name, description: (t.description ?? "").slice(0, 300) })),
+      });
+    });
   }
 
   /** The catalog the model sees: which sources exist and what they can do. */
@@ -108,22 +125,26 @@ export class EvidenceHub {
   }
 
   /**
-   * Call one tool on one source, returning text for the model. Errors come
-   * back as text (not throws) so the agentic loop can route around them.
+   * Call one tool on one source. Failures come back with `isError: true` (not
+   * throws) so the dispatcher can map them to the `error` evidence status —
+   * a failed check must never reach the model looking like a clean result.
    */
-  async call(source: string, tool: string, args: Record<string, unknown>): Promise<string> {
+  async call(source: string, tool: string, args: Record<string, unknown>): Promise<{ text: string; isError: boolean }> {
     await this.connect();
     const client = this.clients.get(source);
     if (!client) {
       const available = this.catalog.map((c) => c.source).join(", ") || "none connected";
-      return `Unknown evidence source "${source}". Available sources: ${available}.`;
+      return { text: `Unknown evidence source "${source}". Available sources: ${available}.`, isError: true };
     }
     try {
       const result = await client.callTool({ name: tool, arguments: args });
       const text = extractText(result.content);
-      return text || "(tool returned no textual content)";
+      return { text: text || "(tool returned no textual content)", isError: Boolean(result.isError) };
     } catch (err) {
-      return `Evidence source "${source}" tool "${tool}" failed: ${err instanceof Error ? err.message : String(err)}`;
+      return {
+        text: `Evidence source "${source}" tool "${tool}" failed: ${err instanceof Error ? err.message : String(err)}`,
+        isError: true,
+      };
     }
   }
 
@@ -132,6 +153,8 @@ export class EvidenceHub {
       await client.close().catch(() => undefined);
     }
     this.clients.clear();
+    this.catalog = [];
+    this.connecting = null;
   }
 }
 

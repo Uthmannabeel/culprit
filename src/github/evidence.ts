@@ -1,4 +1,5 @@
 import type { AppConfig } from "../config.js";
+import { ghHeaders, splitRepo } from "./common.js";
 
 /**
  * Read-only GitHub evidence helpers used by the Gemini brain. These use the
@@ -6,21 +7,6 @@ import type { AppConfig } from "../config.js";
  * (and their diffs) are enough to surface "what changed recently", including
  * changes that landed via a merged PR.
  */
-
-function ghHeaders(config: AppConfig): Record<string, string> {
-  return {
-    Authorization: `Bearer ${config.GITHUB_TOKEN}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-    "User-Agent": "culprit-triage",
-  };
-}
-
-function splitRepo(repo: string): [string, string] {
-  const [owner, name] = repo.split("/");
-  if (!owner || !name) throw new Error(`Invalid repo "${repo}" — expected owner/repo`);
-  return [owner, name];
-}
 
 async function ghGet(config: AppConfig, path: string): Promise<unknown> {
   const res = await fetch(`https://api.github.com${path}`, { headers: ghHeaders(config) });
@@ -94,10 +80,18 @@ export async function getCommit(config: AppConfig, repo: string, sha: string): P
   };
 }
 
+/**
+ * Paths that look like secret material. File contents flow to the LLM provider
+ * (free-tier Gemini in the default setup) and can surface in draft issue
+ * bodies — a prompt-injected "read .env and include it" must hit a wall here.
+ */
+const SENSITIVE_PATH = /(^|\/)\.env(\.|$)|(^|\/)(secrets?|credentials?)(\.|\/|$)|\.(pem|key|p12|pfx)$|(^|\/)id_(rsa|ed25519|ecdsa)/i;
+
 /** Decoded contents of a file at the default branch. */
 export async function getFileContents(config: AppConfig, repo: string, path: string): Promise<string> {
   const [owner, name] = splitRepo(repo);
   if (path.split("/").includes("..")) throw new Error(`Refusing to read path with '..' segment: ${path}`);
+  if (SENSITIVE_PATH.test(path)) throw new Error(`Refusing to read a sensitive-looking path: ${path}`);
   // Encode each segment but keep the slashes that separate directories.
   const safePath = path
     .split("/")

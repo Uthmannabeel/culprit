@@ -33,7 +33,6 @@ export function tokenize(text: string): string[] {
   const tokens = text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
   return tokens.filter((t) => {
     if (STOP_WORDS.has(t)) return false;
-    // eslint-disable-next-line no-control-regex
     return t.length > 2 || /[^\x00-\x7f]/.test(t);
   });
 }

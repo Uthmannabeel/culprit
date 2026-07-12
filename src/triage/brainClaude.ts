@@ -15,9 +15,16 @@ import { TRIAGE_SYSTEM_PROMPT, buildTriageUserMessage } from "./prompt.js";
 import { RECALL_TOOL_NAME, RECALL_TOOL_DESCRIPTION, toPriorIncidents } from "./recall.js";
 import { dispatchSharedTool, formatEvidenceResult, type EvidenceDeps } from "./evidenceTools.js";
 import { describeToolCall } from "./progress.js";
-import { TriageResultSchema, type ProgressFn, type TriageRequest, type TriageResult } from "./types.js";
-
-export type { ProgressFn } from "./types.js";
+import { SUBMIT_TOOL_ANTHROPIC, SUBMIT_TOOL_NAME } from "./submitTool.js";
+import { withRetry } from "../util/retry.js";
+import {
+  ERR_NO_CONVERGE,
+  ERR_NO_REPO,
+  TriageResultSchema,
+  type ProgressFn,
+  type TriageRequest,
+  type TriageResult,
+} from "./types.js";
 
 /** The Evidence Hub's two generic tools, as Anthropic tool definitions. */
 const HUB_TOOLS: Anthropic.Tool[] = [
@@ -54,58 +61,7 @@ const RECALL_TOOL: Anthropic.Tool = {
   },
 };
 
-/** JSON schema for the finalizer tool — the model calls this exactly once. */
-const SUBMIT_TOOL: Anthropic.Tool = {
-  name: "submit_triage",
-  description:
-    "Call this exactly once, when you have gathered enough evidence, to deliver your final triage verdict.",
-  input_schema: {
-    type: "object",
-    additionalProperties: false,
-    properties: {
-      summary: { type: "string", description: "One-line summary of what is most likely wrong." },
-      rootCauseHypothesis: { type: "string", description: "Leading root-cause hypothesis, in plain language." },
-      confidence: { type: "number", description: "0-100 confidence in the hypothesis." },
-      severity: { type: "string", enum: ["sev1", "sev2", "sev3", "unknown"] },
-      suspectedOwner: { type: ["string", "null"], description: "GitHub handle/team that owns the area, or null." },
-      evidence: {
-        type: "array",
-        items: {
-          type: "object",
-          additionalProperties: false,
-          properties: {
-            kind: { type: "string", enum: ["commit", "pull_request", "issue", "file", "past_incident", "other"] },
-            title: { type: "string" },
-            url: { type: ["string", "null"] },
-            why: { type: "string", description: "Why this evidence supports the hypothesis." },
-          },
-          required: ["kind", "title", "url", "why"],
-        },
-      },
-      recommendedActions: { type: "array", items: { type: "string" } },
-      draftIssue: {
-        type: "object",
-        additionalProperties: false,
-        properties: {
-          title: { type: "string" },
-          body: { type: "string", description: "Markdown body for a fileable GitHub issue." },
-          labels: { type: "array", items: { type: "string" } },
-        },
-        required: ["title", "body", "labels"],
-      },
-    },
-    required: [
-      "summary",
-      "rootCauseHypothesis",
-      "confidence",
-      "severity",
-      "suspectedOwner",
-      "evidence",
-      "recommendedActions",
-      "draftIssue",
-    ],
-  },
-};
+// The finalizer tool definition is shared with the Gemini brain — see submitTool.ts.
 
 /**
  * Runs the agentic triage loop on Claude: it recalls past incidents, gathers
@@ -120,7 +76,7 @@ export async function runTriageClaude(
 ): Promise<TriageResult> {
   const anthropic = new Anthropic({ apiKey: config.ANTHROPIC_API_KEY });
   const repo = req.repo ?? config.GITHUB_DEFAULT_REPO;
-  if (!repo) throw new Error("No repository specified and GITHUB_DEFAULT_REPO is not set.");
+  if (!repo) throw new Error(ERR_NO_REPO);
 
   const memory = new IncidentMemory(config);
   const collectedHits: RecallHit[] = [];
@@ -132,7 +88,7 @@ export async function runTriageClaude(
     ...bridge.getTools(),
     ...(hub.enabled ? HUB_TOOLS : []),
     RECALL_TOOL,
-    SUBMIT_TOOL,
+    SUBMIT_TOOL_ANTHROPIC,
   ] as Anthropic.Tool[];
   const messages: Anthropic.MessageParam[] = [
     { role: "user", content: buildTriageUserMessage(req, repo) },
@@ -141,17 +97,23 @@ export async function runTriageClaude(
   try {
   for (let step = 0; step < config.TRIAGE_MAX_STEPS; step++) {
     const forceSubmit = step === config.TRIAGE_MAX_STEPS - 1;
-    const response = await anthropic.messages.create({
-      model: config.TRIAGE_MODEL,
-      max_tokens: 8000,
-      thinking: { type: "adaptive" },
-      output_config: { effort: "high" },
-      system: TRIAGE_SYSTEM_PROMPT,
-      tools,
-      // On the last allowed step, force the verdict so we always return something.
-      tool_choice: forceSubmit ? { type: "tool", name: "submit_triage" } : { type: "auto" },
-      messages,
-    });
+    // The API rejects a forced tool_choice while thinking is enabled, so the
+    // final "always return something" step must drop thinking — otherwise the
+    // safety valve itself 400s after burning the whole step budget.
+    // Transient failures (429/529/network) retry with backoff.
+    const response = await withRetry(() =>
+      anthropic.messages.create({
+        model: config.TRIAGE_MODEL,
+        max_tokens: 8000,
+        ...(forceSubmit ? {} : { thinking: { type: "adaptive" as const } }),
+        output_config: { effort: "high" },
+        system: TRIAGE_SYSTEM_PROMPT,
+        tools,
+        // On the last allowed step, force the verdict so we always return something.
+        tool_choice: forceSubmit ? { type: "tool", name: SUBMIT_TOOL_NAME } : { type: "auto" },
+        messages,
+      }),
+    );
 
     if (response.stop_reason === "refusal") {
       throw new Error("The triage model declined to analyze this report.");
@@ -173,17 +135,20 @@ export async function runTriageClaude(
 
     messages.push({ role: "assistant", content: response.content });
 
-    const submit = toolUses.find((t) => t.name === "submit_triage");
+    const submit = toolUses.find((t) => t.name === SUBMIT_TOOL_NAME);
     if (submit) {
       return TriageResultSchema.parse({ ...(submit.input as object), priorIncidents: toPriorIncidents(collectedHits) });
     }
+
+    // One status update per round — N racing chat.updates on the same message
+    // would burn Slack rate limit and land in arbitrary order.
+    await onProgress?.(describeRound(toolUses.map((t) => t.name)));
 
     // Otherwise these are recall / GitHub MCP calls — run the round concurrently
     // (Promise.all preserves order, so results stay aligned with tool_use ids).
     const toolResults: Anthropic.ToolResultBlockParam[] = await Promise.all(
       toolUses.map(async (call): Promise<Anthropic.ToolResultBlockParam> => {
         const input = (call.input as Record<string, unknown>) ?? {};
-        await onProgress?.(describeToolCall(call.name));
         // Recall + hub go through the shared typed dispatcher (same as Gemini);
         // everything else is a GitHub MCP tool, handled by the bridge, whose
         // is_error flag already gives Claude a first-class success/failure signal.
@@ -192,7 +157,7 @@ export async function runTriageClaude(
           return {
             type: "tool_result",
             tool_use_id: call.id,
-            content: truncate(formatEvidenceResult(shared), 8000),
+            content: formatEvidenceResult(shared),
             is_error: shared.status === "error" ? true : undefined,
           };
         }
@@ -203,10 +168,15 @@ export async function runTriageClaude(
     messages.push({ role: "user", content: toolResults });
   }
 
-  throw new Error("Triage did not converge on a verdict within the step budget.");
+  throw new Error(ERR_NO_CONVERGE);
   } finally {
     await hub.close();
   }
+}
+
+/** Narrate a whole tool round as one line, deduped. */
+export function describeRound(toolNames: string[]): string {
+  return [...new Set(toolNames.map((n) => describeToolCall(n)))].join(" · ");
 }
 
 /** Keep individual tool results from blowing the context budget. */

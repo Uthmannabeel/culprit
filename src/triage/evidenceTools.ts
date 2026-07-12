@@ -61,9 +61,18 @@ export function evidenceError(tool: string, note: string): EvidenceResult {
   return { tool, status: "error", note };
 }
 
-/** The JSON string the model sees for a tool result. */
+/**
+ * Cap on one tool result's serialized size. Without this the Gemini path sent
+ * results verbatim (a big merge commit can be hundreds of KB), and the whole
+ * history is re-sent every loop step — context cost grew ~quadratically.
+ */
+export const TOOL_RESULT_MAX_CHARS = 8000;
+
+/** The JSON string the model sees for a tool result — size-capped. */
 export function formatEvidenceResult(result: EvidenceResult): string {
-  return JSON.stringify(result);
+  const json = JSON.stringify(result);
+  if (json.length <= TOOL_RESULT_MAX_CHARS) return json;
+  return `${json.slice(0, TOOL_RESULT_MAX_CHARS)}\n…[truncated ${json.length - TOOL_RESULT_MAX_CHARS} chars]`;
 }
 
 /** Run a handler with a validated-args boundary, mapping any throw to a typed error. */
@@ -141,12 +150,24 @@ export async function dispatchSharedTool(
     return runHandler(name, z.object({}), rawArgs, () => deps.hub.sources());
   }
   if (name === HUB_QUERY_TOOL_NAME) {
-    return runHandler(
-      name,
-      z.object({ source: z.string().min(1), tool: z.string().min(1), argsJson: z.string().optional() }),
-      rawArgs,
-      (args) => deps.hub.call(args.source, args.tool, parseHubArgs(args.argsJson)),
-    );
+    const parsed = z
+      .object({ source: z.string().min(1), tool: z.string().min(1), argsJson: z.string().optional() })
+      .safeParse(rawArgs);
+    if (!parsed.success) {
+      return evidenceError(name, `invalid arguments: ${parsed.error.issues.map((i) => i.message).join("; ")}`);
+    }
+    try {
+      // The hub reports failures via isError — map them to the `error` status
+      // so a down source can never read as a clean "nothing found".
+      const { text, isError } = await deps.hub.call(
+        parsed.data.source,
+        parsed.data.tool,
+        parseHubArgs(parsed.data.argsJson),
+      );
+      return isError ? evidenceError(name, text) : evidenceOk(name, text);
+    } catch (err) {
+      return evidenceError(name, err instanceof Error ? err.message : String(err));
+    }
   }
   return null;
 }

@@ -1,10 +1,8 @@
 import type { AppConfig } from "../config.js";
 import { GitHubMcpBridge } from "../mcp/githubClient.js";
-import { runTriageClaude, type ProgressFn } from "./brainClaude.js";
+import { runTriageClaude } from "./brainClaude.js";
 import { runTriageGemini } from "./brainGemini.js";
-import type { TriageRequest, TriageResult } from "./types.js";
-
-export type { ProgressFn } from "./brainClaude.js";
+import type { ProgressFn, TriageRequest, TriageResult } from "./types.js";
 
 /**
  * Run a triage with whichever LLM provider is configured. This is the single

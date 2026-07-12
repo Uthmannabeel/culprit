@@ -72,9 +72,31 @@ describe("EvidenceHub (against a real in-memory MCP server)", () => {
       { source: "logs", tools: [{ name: "search_logs", description: "Search application logs." }] },
     ]);
 
-    const text = await hub.call("logs", "search_logs", { query: "checkout 500" });
-    expect(text).toContain('matching "checkout 500"');
-    expect(text).toContain("payment client not configured");
+    const result = await hub.call("logs", "search_logs", { query: "checkout 500" });
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain('matching "checkout 500"');
+    expect(result.text).toContain("payment client not configured");
+
+    await hub.close();
+  });
+
+  test("concurrent first calls share one connect — no half-empty catalog race", async () => {
+    let factoryCalls = 0;
+    const hub = new EvidenceHub([LOGS], async () => {
+      factoryCalls++;
+      return makeTestClient();
+    });
+
+    // Both brains fire a round's tool calls with Promise.all — the second
+    // caller must wait for the same connect, not sail through a boolean flag.
+    const [catalog, result] = await Promise.all([
+      hub.sources(),
+      hub.call("logs", "search_logs", { query: "x" }),
+    ]);
+    expect(factoryCalls).toBe(1);
+    expect(catalog.map((c) => c.source)).toEqual(["logs"]);
+    expect(result.isError).toBe(false);
+    expect(result.text).toContain("log lines");
 
     await hub.close();
   });
@@ -87,18 +109,23 @@ describe("EvidenceHub (against a real in-memory MCP server)", () => {
 
     const catalog = await hub.sources();
     expect(catalog.map((c) => c.source)).toEqual(["logs"]);
-    expect(await hub.call("logs", "search_logs", { query: "x" })).toContain("log lines");
+    expect((await hub.call("logs", "search_logs", { query: "x" })).text).toContain("log lines");
 
     await hub.close();
   });
 
-  test("unknown sources and failing tools come back as text, not throws", async () => {
+  test("unknown sources and failing tools come back flagged isError, not throws", async () => {
     const hub = new EvidenceHub([LOGS], async () => makeTestClient());
 
-    expect(await hub.call("nope", "search_logs", {})).toContain('Unknown evidence source "nope"');
+    const unknown = await hub.call("nope", "search_logs", {});
+    expect(unknown.isError).toBe(true);
+    expect(unknown.text).toContain('Unknown evidence source "nope"');
     // The SDK surfaces unknown tools as an error result; either way the model
-    // receives explanatory text, never an exception.
-    expect(await hub.call("logs", "no_such_tool", {})).toMatch(/no_such_tool|failed/);
+    // receives explanatory text flagged as a failure, never an exception —
+    // the dispatcher maps isError to the `error` evidence status.
+    const failing = await hub.call("logs", "no_such_tool", {});
+    expect(failing.isError).toBe(true);
+    expect(failing.text).toMatch(/no_such_tool|failed/);
 
     await hub.close();
   });

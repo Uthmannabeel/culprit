@@ -2,7 +2,14 @@ import { GoogleGenAI, Type, FunctionCallingConfigMode } from "@google/genai";
 import type { Content, FunctionDeclaration, Part } from "@google/genai";
 import type { AppConfig } from "../config.js";
 import { TRIAGE_SYSTEM_PROMPT, buildTriageUserMessage } from "./prompt.js";
-import { TriageResultSchema, type TriageRequest, type TriageResult } from "./types.js";
+import { SUBMIT_TOOL_GEMINI, SUBMIT_TOOL_NAME } from "./submitTool.js";
+import {
+  ERR_NO_CONVERGE,
+  ERR_NO_REPO,
+  TriageResultSchema,
+  type TriageRequest,
+  type TriageResult,
+} from "./types.js";
 import { IncidentMemory } from "../memory/store.js";
 import type { RecallHit } from "../memory/types.js";
 import {
@@ -117,45 +124,7 @@ const EVIDENCE_TOOLS: FunctionDeclaration[] = [
   },
 ];
 
-/** The structured finalizer — Gemini calls this once with its verdict. */
-const SUBMIT_TOOL: FunctionDeclaration = {
-  name: "submit_triage",
-  description: "Call exactly once, when you have enough evidence, to deliver your final triage verdict.",
-  parameters: {
-    type: Type.OBJECT,
-    properties: {
-      summary: { type: Type.STRING },
-      rootCauseHypothesis: { type: Type.STRING },
-      confidence: { type: Type.NUMBER, description: "0-100 confidence in the hypothesis." },
-      severity: { type: Type.STRING, enum: ["sev1", "sev2", "sev3", "unknown"] },
-      suspectedOwner: { type: Type.STRING, nullable: true, description: "GitHub handle/team, or null." },
-      evidence: {
-        type: Type.ARRAY,
-        items: {
-          type: Type.OBJECT,
-          properties: {
-            kind: { type: Type.STRING, enum: ["commit", "pull_request", "issue", "file", "past_incident", "other"] },
-            title: { type: Type.STRING },
-            url: { type: Type.STRING, nullable: true },
-            why: { type: Type.STRING },
-          },
-          required: ["kind", "title", "why"],
-        },
-      },
-      recommendedActions: { type: Type.ARRAY, items: { type: Type.STRING } },
-      draftIssue: {
-        type: Type.OBJECT,
-        properties: {
-          title: { type: Type.STRING },
-          body: { type: Type.STRING },
-          labels: { type: Type.ARRAY, items: { type: Type.STRING } },
-        },
-        required: ["title", "body", "labels"],
-      },
-    },
-    required: ["summary", "rootCauseHypothesis", "confidence", "severity", "draftIssue"],
-  },
-};
+// The finalizer tool definition is shared with the Claude brain — see submitTool.ts.
 
 /** Gemini declarations for the Evidence Hub's two generic tools. */
 const HUB_TOOLS: FunctionDeclaration[] = [
@@ -214,7 +183,7 @@ export async function runTriageGemini(
   onProgress?: ProgressFn,
 ): Promise<TriageResult> {
   const repo = req.repo ?? config.GITHUB_DEFAULT_REPO;
-  if (!repo) throw new Error("No repository specified and GITHUB_DEFAULT_REPO is not set.");
+  if (!repo) throw new Error(ERR_NO_REPO);
 
   const ai = new GoogleGenAI({ apiKey: config.GEMINI_API_KEY });
   const memory = new IncidentMemory(config);
@@ -223,7 +192,7 @@ export async function runTriageGemini(
   // — no tool noise for a GitHub-only setup.
   const hub = new EvidenceHub(parseEvidenceServers(config.EVIDENCE_MCP_SERVERS));
   const deps: EvidenceDeps = { config, repo, memory, hub, collectedHits };
-  const functionDeclarations = [...EVIDENCE_TOOLS, ...(hub.enabled ? HUB_TOOLS : []), SUBMIT_TOOL];
+  const functionDeclarations = [...EVIDENCE_TOOLS, ...(hub.enabled ? HUB_TOOLS : []), SUBMIT_TOOL_GEMINI];
   const contents: Content[] = [{ role: "user", parts: [{ text: buildTriageUserMessage(req, repo) }] }];
 
   try {
@@ -240,7 +209,7 @@ export async function runTriageGemini(
         tools: [{ functionDeclarations }],
         toolConfig: {
           functionCallingConfig: forceSubmit
-            ? { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: ["submit_triage"] }
+            ? { mode: FunctionCallingConfigMode.ANY, allowedFunctionNames: [SUBMIT_TOOL_NAME] }
             : { mode: FunctionCallingConfigMode.AUTO },
         },
         },
@@ -258,16 +227,19 @@ export async function runTriageGemini(
 
     contents.push(modelContent ?? { role: "model", parts: calls.map((c) => ({ functionCall: c })) });
 
-    const submit = calls.find((c) => c.name === "submit_triage");
+    const submit = calls.find((c) => c.name === SUBMIT_TOOL_NAME);
     if (submit) {
       return normalizeVerdict((submit.args as Record<string, unknown>) ?? {}, toPriorIncidents(collectedHits));
     }
+
+    // One status update per round — N racing chat.updates on the same message
+    // would burn Slack rate limit and land in arbitrary order.
+    await onProgress?.([...new Set(calls.map((c) => describeToolCall(c.name)))].join(" · "));
 
     // The model often asks for several lookups at once — run them concurrently
     // (Promise.all preserves order, so responses stay aligned with the calls).
     const responseParts: Part[] = await Promise.all(
       calls.map(async (call) => {
-        await onProgress?.(describeToolCall(call.name));
         const text = await runEvidenceTool(deps, call.name ?? "", (call.args as Record<string, unknown>) ?? {});
         return { functionResponse: { name: call.name ?? "", response: { result: text } } };
       }),
@@ -275,7 +247,7 @@ export async function runTriageGemini(
     contents.push({ role: "user", parts: responseParts });
   }
 
-  throw new Error("Triage did not converge on a verdict within the step budget.");
+  throw new Error(ERR_NO_CONVERGE);
   } finally {
     await hub.close();
   }

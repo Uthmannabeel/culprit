@@ -34,6 +34,17 @@ describe("parseRepo", () => {
     expect(parseRepo("no repo here", "fall/back")).toBe("fall/back");
     expect(parseRepo("no repo here")).toBeUndefined();
   });
+
+  test("strips sentence-final punctuation — 'repo:acme/store.' must not 404 everything", () => {
+    expect(parseRepo("investigate repo:acme/store.")).toBe("acme/store");
+    expect(parseRepo("repo:acme/api, checkout is down")).toBe("acme/api");
+    expect(parseRepo("(see https://github.com/acme/store)")).toBe("acme/store");
+  });
+
+  test("rejects candidates outside GitHub's owner/repo charset instead of injecting them", () => {
+    expect(parseRepo("repo:acme?x=1/store", "fall/back")).toBe("fall/back");
+    expect(parseRepo("repo:acme/store%2e", "fall/back")).toBe("fall/back");
+  });
 });
 
 describe("stripMentions", () => {
@@ -69,6 +80,17 @@ describe("formatThreadContext", () => {
   test("returns empty for no usable messages", () => {
     expect(formatThreadContext([{ text: "", ts: "1" }], "1")).toBe("");
   });
+
+  test("when the budget runs out, the NEWEST messages survive (they hold the freshest clues)", () => {
+    const messages = Array.from({ length: 30 }, (_, i) => ({ text: `msg-${i} ${"x".repeat(280)}`, ts: `${i}` }));
+    const out = formatThreadContext(messages, "none");
+    expect(out).toContain("msg-29"); // newest kept
+    expect(out).not.toContain("msg-0 "); // oldest dropped
+    // and chronological order is preserved for the survivors
+    const first = out.indexOf("msg-2");
+    const last = out.indexOf("msg-29");
+    expect(first).toBeLessThan(last);
+  });
 });
 
 describe("parseMemoryCommand", () => {
@@ -99,5 +121,14 @@ describe("shouldAutoTriage", () => {
     expect(shouldAutoTriage({ ...base, bot_id: "B0SELF" }, alerts, "B0SELF")).toBe(false);
     expect(shouldAutoTriage({ ...base, text: "  " }, alerts, "B0SELF")).toBe(false);
     expect(shouldAutoTriage(base, parseAlertChannels(undefined), "B0SELF")).toBe(false);
+  });
+
+  test("with ALERT_BOT_IDS set, only those bots trigger — humans and strangers don't", () => {
+    const allowed = new Set(["B0SENTRY"]);
+    expect(shouldAutoTriage({ ...base, bot_id: "B0SENTRY" }, alerts, "B0SELF", allowed)).toBe(true);
+    expect(shouldAutoTriage({ ...base, bot_id: "B0STRANGER" }, alerts, "B0SELF", allowed)).toBe(false);
+    expect(shouldAutoTriage(base, alerts, "B0SELF", allowed)).toBe(false); // human post
+    // empty allowlist = old behaviour
+    expect(shouldAutoTriage(base, alerts, "B0SELF", new Set())).toBe(true);
   });
 });

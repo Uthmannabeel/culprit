@@ -3,11 +3,14 @@ import {
   alreadyFiledUrl,
   clearDraftStore,
   decodeIssuePayload,
+  decodeResolveContext,
   encodeIssuePayload,
+  encodeResolveContext,
   markDuplicateWarned,
   markFiled,
   wasDuplicateWarned,
 } from "./draftStore.js";
+import type { ResolveContext } from "./resolve.js";
 
 const smallIssue = { title: "Checkout 500s", body: "short body", labels: ["bug"] };
 
@@ -39,6 +42,45 @@ describe("encodeIssuePayload / decodeIssuePayload", () => {
     expect(decodeIssuePayload(undefined)).toBeNull();
     expect(decodeIssuePayload("not json")).toBeNull();
     expect(decodeIssuePayload(JSON.stringify({ nonsense: true }))).toBeNull();
+  });
+});
+
+describe("encodeResolveContext / decodeResolveContext", () => {
+  const ctx: ResolveContext = {
+    symptom: "checkout 500s",
+    hypothesis: "env var renamed",
+    repo: "acme/store",
+    suspectedOwner: "dana",
+    link: "https://github.com/acme/store/pull/1",
+    channel: null,
+    threadTs: null,
+    canvasId: null,
+  };
+
+  test("small contexts inline and round-trip", () => {
+    const value = encodeResolveContext(ctx);
+    expect(value.length).toBeLessThanOrEqual(2000);
+    expect(decodeResolveContext(value)).toEqual(ctx);
+  });
+
+  test("oversized contexts spill to the store but stay under the button cap", () => {
+    const big = { ...ctx, hypothesis: '"quote-dense" \\path\\ '.repeat(100) };
+    const value = encodeResolveContext(big);
+    expect(value.length).toBeLessThanOrEqual(2000);
+    expect(decodeResolveContext(value)?.hypothesis).toBe(big.hypothesis);
+  });
+
+  test("a spilled context dies with a restart → null, so the handler can explain", () => {
+    const big = { ...ctx, hypothesis: "x".repeat(3000) };
+    const value = encodeResolveContext(big);
+    clearDraftStore();
+    expect(decodeResolveContext(value)).toBeNull();
+  });
+
+  test("malformed values decode to null", () => {
+    expect(decodeResolveContext(undefined)).toBeNull();
+    expect(decodeResolveContext("not json")).toBeNull();
+    expect(decodeResolveContext(JSON.stringify({ nonsense: true }))).toBeNull();
   });
 });
 

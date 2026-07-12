@@ -62,6 +62,7 @@ async function withWriteLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
 export class IncidentMemory {
   private records: IncidentRecord[] = [];
   private loaded = false;
+  private cacheAttached = false;
   private readonly cachePath: string;
 
   constructor(
@@ -71,10 +72,15 @@ export class IncidentMemory {
     this.cachePath = `${this.path}.cache.json`;
   }
 
-  /** Load records from disk (missing file = empty memory, not an error). */
+  /**
+   * Load records from disk (missing file = empty memory, not an error). The
+   * vector sidecar (3072 floats × N records — the largest file in the system)
+   * is NOT parsed here: stats()/forget() never need vectors, so only the
+   * embedding-recall path pays that cost, lazily.
+   */
   async load(): Promise<void> {
     this.records = await this.readRecords();
-    await this.attachCachedEmbeddings();
+    this.cacheAttached = false;
     this.loaded = true;
   }
 
@@ -129,24 +135,44 @@ export class IncidentMemory {
 
   /** Record a (usually resolved) incident and persist it. Embedding best-effort. */
   async remember(record: IncidentRecord): Promise<void> {
+    await this.rememberMany([record]);
+  }
+
+  /**
+   * Record a batch in ONE embedding call and ONE persisted write. The issue
+   * importer used to do one API round-trip and one full store rewrite PER
+   * record — O(n²) serialization and rate-limit churn for a 50-issue import.
+   * Never mutates the caller's records (embeddings land on copies).
+   */
+  async rememberMany(records: IncidentRecord[]): Promise<void> {
+    if (records.length === 0) return;
     // Embed OUTSIDE the write lock — a slow network call shouldn't block other writers.
-    if (!record.embedding) {
-      try {
-        const [vec] = await embedTexts(this.config, [recordText(record)]);
-        record.embedding = vec ?? null;
-      } catch {
-        record.embedding = null; // keep going; lexical recall still works
-      }
-    }
+    const withVectors = await this.embedMissing(records);
     await withWriteLock(this.path, async () => {
       // Re-read inside the lock so a concurrent writer's record isn't lost.
       this.records = await this.readRecords();
-      await this.attachCachedEmbeddings();
-      this.records = [...this.records.filter((r) => r.id !== record.id), record];
+      this.cacheAttached = false;
+      const ids = new Set(withVectors.map((r) => r.id));
+      this.records = [...this.records.filter((r) => !ids.has(r.id)), ...withVectors];
       await this.save();
       await this.saveCache();
     });
     this.loaded = true;
+  }
+
+  /** Copies of `records` with embeddings filled in where missing (best-effort). */
+  private async embedMissing(records: IncidentRecord[]): Promise<IncidentRecord[]> {
+    const missing = records.filter((r) => !r.embedding);
+    if (missing.length === 0) return records.map((r) => ({ ...r }));
+    let vectors: Array<number[] | null> = missing.map(() => null);
+    try {
+      const embedded = await embedTexts(this.config, missing.map((r) => recordText(r)));
+      vectors = missing.map((_, i) => embedded[i] ?? null);
+    } catch {
+      // keep going; lexical recall still works
+    }
+    const vectorById = new Map(missing.map((r, i) => [r.id, vectors[i] ?? null]));
+    return records.map((r) => (r.embedding ? { ...r } : { ...r, embedding: vectorById.get(r.id) ?? null }));
   }
 
   /**
@@ -157,7 +183,7 @@ export class IncidentMemory {
     let removed = false;
     await withWriteLock(this.path, async () => {
       this.records = await this.readRecords();
-      await this.attachCachedEmbeddings();
+      this.cacheAttached = false;
       const before = this.records.length;
       this.records = this.records.filter((r) => r.id !== id);
       removed = this.records.length < before;
@@ -177,11 +203,19 @@ export class IncidentMemory {
   /** Embedding-based ranking; returns null if embeddings are unavailable. */
   private async tryEmbeddingRecall(query: string): Promise<RecallHit[] | null> {
     try {
+      // Only this path needs vectors — attach the sidecar cache on first use.
+      if (!this.cacheAttached) {
+        await this.attachCachedEmbeddings();
+        this.cacheAttached = true;
+      }
       const needEmbedding = this.records.filter((r) => !r.embedding);
       const texts = [query, ...needEmbedding.map((r) => recordText(r))];
       const [queryVec, ...freshVecs] = await embedTexts(this.config, texts);
       if (!queryVec) return null;
-      needEmbedding.forEach((r, i) => (r.embedding = freshVecs[i] ?? null));
+      const freshById = new Map(needEmbedding.map((r, i) => [r.id, freshVecs[i] ?? null]));
+      this.records = this.records.map((r) =>
+        !r.embedding && freshById.has(r.id) ? { ...r, embedding: freshById.get(r.id) ?? null } : r,
+      );
       // Persist newly computed vectors so the next process doesn't re-embed.
       if (needEmbedding.length > 0) await this.saveCache();
 
@@ -219,12 +253,12 @@ export class IncidentMemory {
   /** Attach cached vectors to loaded records (skipping any whose text changed). */
   private async attachCachedEmbeddings(): Promise<void> {
     const cache = await this.readCache();
-    for (const record of this.records) {
+    this.records = this.records.map((record) => {
       const entry = cache[record.id];
-      if (!record.embedding && entry && entry.text === recordText(record)) {
-        record.embedding = entry.vector;
-      }
-    }
+      return !record.embedding && entry && entry.text === recordText(record)
+        ? { ...record, embedding: entry.vector }
+        : record;
+    });
   }
 
   private async readCache(): Promise<EmbeddingCache> {
@@ -236,7 +270,14 @@ export class IncidentMemory {
   }
 
   private async saveCache(): Promise<void> {
-    const cache: EmbeddingCache = {};
+    // MERGE with the on-disk cache rather than rebuilding from records: with
+    // lazy attachment the in-memory records may not carry vectors the sidecar
+    // already has, and a rebuild would silently drop them (forcing re-embeds).
+    const cache = await this.readCache();
+    const liveIds = new Set(this.records.map((r) => r.id));
+    for (const id of Object.keys(cache)) {
+      if (!liveIds.has(id)) delete cache[id];
+    }
     for (const r of this.records) {
       if (r.embedding) cache[r.id] = { text: recordText(r), vector: r.embedding };
     }

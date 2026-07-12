@@ -38,12 +38,10 @@ async function main(): Promise<void> {
 
   const transport = new StdioServerTransport();
   await server.connect(transport);
-  // eslint-disable-next-line no-console
   console.error("Triage MCP server running on stdio.");
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
   console.error("Fatal:", err instanceof Error ? err.message : err);
   process.exit(1);
 });

@@ -1,4 +1,5 @@
 import { loadConfig, type AppConfig } from "../config.js";
+import { ghHeaders, splitRepo } from "../github/common.js";
 import { IncidentMemory } from "../memory/store.js";
 import type { IncidentRecord } from "../memory/types.js";
 
@@ -16,13 +17,9 @@ import type { IncidentRecord } from "../memory/types.js";
 async function fetchClosedIssues(config: AppConfig, repo: string): Promise<
   Array<{ number: number; title: string; body?: string | null; html_url: string; closed_at?: string | null; pull_request?: unknown }>
 > {
-  const res = await fetch(`https://api.github.com/repos/${repo}/issues?state=closed&per_page=50`, {
-    headers: {
-      Authorization: `Bearer ${config.GITHUB_TOKEN}`,
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2022-11-28",
-      "User-Agent": "culprit-triage",
-    },
+  const [owner, name] = splitRepo(repo);
+  const res = await fetch(`https://api.github.com/repos/${owner}/${name}/issues?state=closed&per_page=50`, {
+    headers: ghHeaders(config),
   });
   if (!res.ok) throw new Error(`GitHub issues fetch failed (${res.status})`);
   return (await res.json()) as Array<{
@@ -40,10 +37,9 @@ async function main(): Promise<void> {
 
   const memory = new IncidentMemory(config);
   await memory.load();
-  let imported = 0;
-  for (const issue of issues) {
+  const records: IncidentRecord[] = issues.map((issue) => {
     const firstLine = (issue.body ?? "").split("\n")[0]?.trim() ?? "";
-    const record: IncidentRecord = {
+    return {
       id: `gh-${repo}-issue-${issue.number}`,
       symptom: [issue.title, firstLine].filter(Boolean).join(" — ").slice(0, 400),
       rootCause: "",
@@ -55,11 +51,11 @@ async function main(): Promise<void> {
       hypothesisWasCorrect: null,
       embedding: null,
     };
-    await memory.remember(record);
-    imported++;
-    console.log(`  + #${issue.number} ${issue.title}`);
-  }
-  console.log(imported === 0 ? "Nothing to import." : `Imported ${imported} incident(s) into ${config.INCIDENTS_DB_PATH}.`);
+  });
+  // One embedding batch + one persisted write — not one API call per issue.
+  await memory.rememberMany(records);
+  for (const issue of issues) console.log(`  + #${issue.number} ${issue.title}`);
+  console.log(records.length === 0 ? "Nothing to import." : `Imported ${records.length} incident(s) into ${config.INCIDENTS_DB_PATH}.`);
 }
 
 main().catch((err) => {

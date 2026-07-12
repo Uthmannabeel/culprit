@@ -1,5 +1,6 @@
 import { describe, expect, test } from "vitest";
-import { buildIncidentCanvasMarkdown, buildResolutionCanvasMarkdown, mdSafe, safeHttpUrl } from "./canvas.js";
+import { buildIncidentCanvasMarkdown, buildResolutionCanvasMarkdown } from "./canvas.js";
+import { mdSafe, safeHttpUrl } from "./format.js";
 import type { TriageResult } from "../triage/types.js";
 import type { IncidentRecord } from "../memory/types.js";
 
@@ -9,7 +10,9 @@ const result: TriageResult = {
   confidence: 91,
   severity: "sev1",
   suspectedOwner: "octocat",
-  evidence: [{ kind: "pull_request", title: "Refactor payment client #1", url: "https://x/pr/1", why: "renamed the key" }],
+  evidence: [
+    { kind: "pull_request", title: "Refactor payment client #1", url: "https://github.com/acme/store/pull/1", why: "renamed the key" },
+  ],
   priorIncidents: [
     { id: "inc-1", symptom: "payments failing at checkout", resolution: "restored env var", resolvedBy: "dana", similarity: 0.77, url: "https://x/pr/1", repo: "acme/store" },
   ],
@@ -31,7 +34,20 @@ describe("buildIncidentCanvasMarkdown", () => {
     expect(md).toContain("## Prior incidents");
     expect(md).toContain("**Strong match**");
     expect(md).toContain("Resolved by dana");
-    expect(md).toContain("[Refactor payment client #1](https://x/pr/1)");
+    expect(md).toContain("[Refactor payment client #1](https://github.com/acme/store/pull/1)");
+  });
+
+  test("GitHub-kind evidence with a non-GitHub URL renders unlinked (spoof guard)", () => {
+    const spoofed = buildIncidentCanvasMarkdown(
+      {
+        ...result,
+        evidence: [{ kind: "commit", title: "commit abc123", url: "https://evil.example/phish", why: "spoofed" }],
+      },
+      "acme/store",
+      "checkout is 500ing",
+    );
+    expect(spoofed).not.toContain("https://evil.example/phish");
+    expect(spoofed).toContain("commit abc123");
   });
 
   test("renders recommended actions as checkboxes", () => {

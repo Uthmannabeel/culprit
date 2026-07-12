@@ -9,15 +9,12 @@ async function main(): Promise<void> {
   await app.start();
   if (config.HEALTH_PORT) {
     startHealthServer(config.HEALTH_PORT);
-    // eslint-disable-next-line no-console
     console.log(`Health endpoint on http://localhost:${config.HEALTH_PORT}/`);
   }
-  // eslint-disable-next-line no-console
   console.log("⚡ Culprit is running (Socket Mode). Mention it in a channel or DM it an incident.");
 }
 
 main().catch((err) => {
-  // eslint-disable-next-line no-console
   console.error("Fatal:", err instanceof Error ? err.message : err);
   process.exit(1);
 });

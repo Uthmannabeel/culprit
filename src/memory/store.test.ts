@@ -163,4 +163,27 @@ describe("IncidentMemory.remember", () => {
     expect(onDisk.map((r) => r.id)).toContain("d");
     expect(onDisk).toHaveLength(SEED.length + 1);
   });
+
+  test("never mutates the caller's record (ECC immutability)", async () => {
+    const memory = new IncidentMemory(makeConfig());
+    const record = fullRecord("immutable");
+    const snapshot = JSON.parse(JSON.stringify(record)) as IncidentRecord;
+    await memory.remember(record);
+    expect(record).toEqual(snapshot);
+  });
+
+  test("rememberMany persists a batch in one write", async () => {
+    const memory = new IncidentMemory(makeConfig());
+    await memory.rememberMany([fullRecord("batch-1"), fullRecord("batch-2"), fullRecord("batch-3")]);
+
+    const onDisk = JSON.parse(await readFile(dbPath, "utf8")) as IncidentRecord[];
+    const ids = onDisk.map((r) => r.id);
+    expect(ids).toEqual(expect.arrayContaining(["batch-1", "batch-2", "batch-3"]));
+    expect(onDisk).toHaveLength(SEED.length + 3);
+    // batch replaces same-id records rather than duplicating them
+    await memory.rememberMany([{ ...fullRecord("batch-1"), resolution: "updated fix" }]);
+    const after = JSON.parse(await readFile(dbPath, "utf8")) as IncidentRecord[];
+    expect(after.filter((r) => r.id === "batch-1")).toHaveLength(1);
+    expect(after.find((r) => r.id === "batch-1")?.resolution).toBe("updated fix");
+  });
 });

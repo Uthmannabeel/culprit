@@ -6,16 +6,19 @@ import {
   clampSectionText,
   confidenceLabel,
   escapeMrkdwn as escape,
+  evidenceLinkUrl,
   linkLabel,
   safeHttpUrl,
   similarityLabel,
 } from "./format.js";
-import { encodeIssuePayload } from "./draftStore.js";
-
-export { confidenceLabel, similarityLabel } from "./format.js";
+import { encodeIssuePayload, encodeResolveContext } from "./draftStore.js";
 
 /** Action IDs for interactive components. */
 export const ACTION_CREATE_ISSUE = "triage_create_issue";
+
+/** How much of the draft-issue body the card previews before filing. */
+const ISSUE_BODY_PREVIEW_LINES = 8;
+const ISSUE_BODY_PREVIEW_CHARS = 500;
 
 /**
  * Verdict-card design system — benchmarked against incident.io, Rootly,
@@ -82,7 +85,9 @@ export function renderTriageBlocks(
 
   if (result.evidence.length > 0) {
     const lines = result.evidence.slice(0, 6).map((e, i) => {
-      const url = safeHttpUrl(e.url);
+      // GitHub-kind evidence must link to GitHub — the URL is model output and
+      // a spoofed link under the bot's authority is a phishing vector.
+      const url = evidenceLinkUrl(e.kind, e.url);
       const title = url ? `<${url}|${linkLabel(e.title.slice(0, 120))}>` : escape(e.title.slice(0, 120));
       return `${i + 1}. ${title} — ${escape(e.why.slice(0, 200))}`;
     });
@@ -110,12 +115,35 @@ export function renderTriageBlocks(
     text: { type: "mrkdwn", text: clampSectionText(`*Draft issue:* ${escape(result.draftIssue.title)}${labels}`) },
   });
 
+  // Show what the button will actually file. Without a preview the human
+  // approves a body they never saw — injected content could hide @mentions,
+  // spoofed links, or leaked file contents behind a benign title.
+  const bodyPreview = result.draftIssue.body
+    .split("\n")
+    .slice(0, ISSUE_BODY_PREVIEW_LINES)
+    .join("\n")
+    .slice(0, ISSUE_BODY_PREVIEW_CHARS);
+  if (bodyPreview.trim()) {
+    const truncated = bodyPreview.length < result.draftIssue.body.length;
+    blocks.push({
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: clampSectionText(`>${escape(bodyPreview).replace(/\n/g, "\n>")}${truncated ? "\n>…" : ""}`),
+      },
+    });
+  }
+
+  // The link is stored in memory and re-surfaced on future recalls — only a
+  // validated URL may travel that far.
+  const evidenceLink =
+    result.evidence.map((e) => evidenceLinkUrl(e.kind, e.url)).find((u): u is string => Boolean(u)) ?? null;
   const resolveCtx: ResolveContext = {
     symptom: (report ?? result.summary).slice(0, 300),
     hypothesis: result.rootCauseHypothesis.slice(0, 600),
     repo,
     suspectedOwner: result.suspectedOwner,
-    link: result.evidence.find((e) => e.url)?.url ?? result.priorIncidents[0]?.url ?? null,
+    link: (evidenceLink ?? safeHttpUrl(result.priorIncidents[0]?.url))?.slice(0, 500) ?? null,
     channel: null,
     threadTs: null,
     canvasId: canvas?.id ?? null,
@@ -134,7 +162,9 @@ export function renderTriageBlocks(
         type: "button",
         text: { type: "plain_text", text: "Log resolution" },
         action_id: ACTION_MARK_RESOLVED,
-        value: JSON.stringify(resolveCtx),
+        // Spill-safe like the issue payload — an oversized value rejects the
+        // WHOLE card, the exact failure this file exists to prevent.
+        value: encodeResolveContext(resolveCtx),
       },
     ],
   });
