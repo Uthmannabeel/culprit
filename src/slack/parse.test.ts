@@ -1,11 +1,13 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import {
+  collectThreadTail,
   formatThreadContext,
   parseAlertChannels,
   parseMemoryCommand,
   parseRepo,
   shouldAutoTriage,
   stripMentions,
+  type ThreadPage,
 } from "./parse.js";
 
 describe("parseRepo", () => {
@@ -90,6 +92,45 @@ describe("formatThreadContext", () => {
     const first = out.indexOf("msg-2");
     const last = out.indexOf("msg-29");
     expect(first).toBeLessThan(last);
+  });
+});
+
+describe("collectThreadTail", () => {
+  /** A thread of `total` messages served in pages of `pageSize`, oldest-first like Slack. */
+  function pagedThread(total: number, pageSize: number) {
+    const all = Array.from({ length: total }, (_, i) => ({ text: `msg-${i}`, ts: `${i}` }));
+    return vi.fn(async (cursor?: string): Promise<ThreadPage> => {
+      const start = cursor ? Number(cursor) : 0;
+      const messages = all.slice(start, start + pageSize);
+      const next = start + pageSize < total ? String(start + pageSize) : undefined;
+      return { messages, ...(next ? { nextCursor: next } : {}) };
+    });
+  }
+
+  test("a short thread needs one page and returns everything", async () => {
+    const fetchPage = pagedThread(10, 200);
+    const tail = await collectThreadTail(fetchPage, 50);
+    expect(tail).toHaveLength(10);
+    expect(fetchPage).toHaveBeenCalledTimes(1);
+  });
+
+  test("a long thread is walked to the END — the tail holds the NEWEST messages", async () => {
+    // Regression: replies arrive oldest-first, so fetching one page of a
+    // 450-reply thread used to yield msg-0..99 and drop everything near the
+    // @mention. The walk must surface msg-449, not msg-0.
+    const fetchPage = pagedThread(450, 200);
+    const tail = await collectThreadTail(fetchPage, 50);
+    expect(fetchPage).toHaveBeenCalledTimes(3); // 200 + 200 + 50
+    expect(tail).toHaveLength(50);
+    expect(tail[0]?.text).toBe("msg-400");
+    expect(tail[tail.length - 1]?.text).toBe("msg-449");
+  });
+
+  test("a pathological thread stops at the page cap instead of walking forever", async () => {
+    const fetchPage = pagedThread(10_000, 200);
+    const tail = await collectThreadTail(fetchPage, 50, 5);
+    expect(fetchPage).toHaveBeenCalledTimes(5);
+    expect(tail).toHaveLength(50); // best-effort window, bounded work
   });
 });
 

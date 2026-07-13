@@ -30,6 +30,7 @@ import {
 } from "./canvas.js";
 import { buildHomeView } from "./home.js";
 import {
+  collectThreadTail,
   formatThreadContext,
   parseIdList,
   parseMemoryCommand,
@@ -42,12 +43,8 @@ import { friendlyTriageError } from "../triage/progress.js";
 
 type SlackClient = App["client"];
 
-/**
- * One page covers virtually every incident thread. conversations.replies
- * returns oldest-first, so a too-small limit would fetch only the START of a
- * long thread and starve the formatter of the freshest (most useful) messages.
- */
-const THREAD_REPLIES_FETCH_LIMIT = 100;
+/** Page size for thread reads (Slack allows up to 1000; modest pages keep each call fast). */
+const THREAD_REPLIES_PAGE_SIZE = 200;
 /** How many open issues to scan for the duplicate-issue warning. */
 const DUP_CHECK_OPEN_ISSUES = 20;
 
@@ -83,7 +80,9 @@ async function displayName(client: SlackClient, userId: string | undefined): Pro
 /**
  * Pull the prior thread discussion as triage context (best-effort). When
  * Culprit is mentioned mid-discussion, the thread above usually holds the best
- * clues (what was tried, error snippets, timings).
+ * clues (what was tried, error snippets, timings). Pages to the END of the
+ * thread — replies arrive oldest-first, so without pagination a long thread
+ * would yield only its start and none of the messages near the @mention.
  */
 async function fetchThreadContext(
   client: SlackClient,
@@ -92,11 +91,19 @@ async function fetchThreadContext(
   triggerTs: string,
 ): Promise<string | undefined> {
   try {
-    const replies = await client.conversations.replies({ channel, ts: threadTs, limit: THREAD_REPLIES_FETCH_LIMIT });
-    const context = formatThreadContext(
-      (replies.messages ?? []) as Array<{ text?: string; ts?: string }>,
-      triggerTs,
-    );
+    const tail = await collectThreadTail(async (cursor) => {
+      const res = await client.conversations.replies({
+        channel,
+        ts: threadTs,
+        limit: THREAD_REPLIES_PAGE_SIZE,
+        ...(cursor ? { cursor } : {}),
+      });
+      return {
+        messages: (res.messages ?? []) as Array<{ text?: string; ts?: string }>,
+        nextCursor: res.response_metadata?.next_cursor,
+      };
+    });
+    const context = formatThreadContext(tail, triggerTs);
     return context || undefined;
   } catch (err) {
     logError("thread-context", err);

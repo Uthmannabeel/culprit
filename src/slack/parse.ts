@@ -59,6 +59,37 @@ export function formatThreadContext(
   return lines.reverse().join("\n");
 }
 
+/** One page of thread replies, as returned by an injected fetcher. */
+export interface ThreadPage {
+  messages: Array<{ text?: string; ts?: string }>;
+  nextCursor?: string;
+}
+
+/**
+ * Walk a paginated thread to its END, keeping only the newest `keep` messages.
+ * Slack returns replies oldest-first, so a single page of a long thread holds
+ * the START of the discussion — the least useful part; the freshest clues sit
+ * on the last page. The fetcher is injected so this stays dependency-free and
+ * unit-testable.
+ */
+export async function collectThreadTail(
+  fetchPage: (cursor?: string) => Promise<ThreadPage>,
+  keep = 50,
+  maxPages = 15,
+): Promise<Array<{ text?: string; ts?: string }>> {
+  let tail: Array<{ text?: string; ts?: string }> = [];
+  let cursor: string | undefined;
+  for (let page = 0; page < maxPages; page++) {
+    const res = await fetchPage(cursor);
+    tail = [...tail, ...res.messages].slice(-keep);
+    cursor = res.nextCursor || undefined;
+    if (!cursor) return tail;
+  }
+  // Page cap hit with thread remaining (thousands of replies) — return what
+  // was walked; thread context is best-effort by contract.
+  return tail;
+}
+
 /** Memory-management commands a user can send instead of an incident report. */
 export type MemoryCommand = { type: "stats" } | { type: "forget"; id: string };
 
